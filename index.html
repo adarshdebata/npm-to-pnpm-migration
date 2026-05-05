@@ -4,6 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="npm to pnpm migration case study: hidden dependencies, Jest 30 resolver issues, and Docker fixes explained with diagrams.">
     <title>Everything Worked — Until We Actually Checked: Our npm → pnpm Migration</title>
     <link
         href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,600;1,400&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;1,9..40,400&family=JetBrains+Mono:wght@400;500&display=swap"
@@ -299,6 +300,12 @@
             color: var(--text-3);
             line-height: 1.7;
         }
+
+        .tech-stack {
+          font-size: 14px;
+          color: var(--text-2);
+          margin-bottom: 20px;
+        }
     </style>
 </head>
 
@@ -317,9 +324,14 @@
             <h1>Everything Worked — Until We Actually Checked</h1>
             <p class="subtitle">Our npm → pnpm migration uncovered a phantom dependency silently hiding in production, a
                 Jest 30 resolver that wouldn't cooperate, and a Docker setup that was wrong from day one.</p>
+
+            <!-- ADD THIS BLOCK -->
+            <p class="tech-stack">
+                Tech Stack: Node.js · pnpm · Jest · Docker
+            </p>
+            
             <div class="post-meta">
                 <span>Adarsh</span>
-                <span class="dot">·</span>
                 <span class="dot">·</span>
                 <span>8 min read</span>
             </div>
@@ -833,6 +845,8 @@ CMD ["bin/server.js"]</code></pre>
             making.</p>
 
         <p>Just don't do it the day before a deadline.</p>
+        
+        <p><strong>Strict tools don’t create problems — they expose the ones you already have.</strong></p>
 
 
     </div>
