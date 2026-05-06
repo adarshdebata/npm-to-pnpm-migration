@@ -1,594 +1,1185 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
+  <!--
+  ================================================================
+  index.html — npm → pnpm Migration Blog Post
+  Author : Adarsh
+  Stack  : HTML5 · CSS3 (external) · Vanilla JS (progress bar)
+  ================================================================
+-->
 
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="npm to pnpm migration case study: hidden dependencies, Jest 30 resolver issues, and Docker fixes explained with diagrams.">
-    <title>Everything Worked — Until We Actually Checked: Our npm → pnpm Migration</title>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="A first-person account of migrating from npm to pnpm on a production cashout service — exposing a phantom dependency, a Jest 30 resolver failure, and a Docker configuration that was wrong from day one."
+    />
+    <meta name="author" content="Adarsh" />
+
+    <!-- Open Graph — for sharing on Slack / LinkedIn / Twitter -->
+    <meta
+      property="og:title"
+      content="Everything Worked — Until We Actually Checked: Our npm → pnpm Migration"
+    />
+    <meta
+      property="og:description"
+      content="Phantom dependencies, Jest 30 resolver issues, and Docker fixes explained with diagrams."
+    />
+    <meta property="og:type" content="article" />
+
+    <title>Everything Worked — Until We Actually Checked | Adarsh</title>
+
+    <!-- Favicon served from the domain root -->
+    <link rel="icon" href="/assets/icons/favicon.ico" type="image/x-icon" />
+    <link rel="shortcut icon" href="/assets/icons/favicon.ico" />
+
+    <!-- Google Fonts — Lora (serif headings) + DM Sans (body) + JetBrains Mono (code) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-        href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,600;1,400&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;1,9..40,400&family=JetBrains+Mono:wght@400;500&display=swap"
-        rel="stylesheet">
-    <style>
-        *,
-        *::before,
-        *::after {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-        }
+      href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,600;1,400&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;1,9..40,400&family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
 
-        :root {
-            --bg: #FAFAF8;
-            --text: #1C1917;
-            --text-2: #78716C;
-            --text-3: #A8A29E;
-            --accent: #D97706;
-            --accent-light: #FEF3C7;
-            --border: #E7E5E4;
-            --code-bg: #161412;
-            --code-text: #F5F0E8;
-        }
+    <!-- External stylesheet (all visual rules live there, not here) -->
+    <link rel="stylesheet" href="styles.css" />
+  </head>
 
-        body {
-            font-family: 'DM Sans', sans-serif;
-            background: var(--bg);
-            color: var(--text);
-            line-height: 1.78;
-            font-size: 17px;
-        }
+  <body>
+    <!-- Skip to main content for keyboard / screen-reader users -->
+    <a class="skip-link" href="#main-content">Skip to content</a>
 
-        .container {
-            max-width: 740px;
-            margin: 0 auto;
-            padding: 64px 24px 100px;
-        }
+    <!-- ── Reading progress bar (width driven by JS below) ── -->
+    <div
+      id="progress-bar"
+      role="progressbar"
+      aria-label="Reading progress"
+    ></div>
 
-        .post-tags {
-            display: flex;
-            gap: 8px;
-            flex-wrap: wrap;
-            margin-bottom: 22px;
-        }
-
-        .tag {
-            font-size: 11px;
-            font-weight: 500;
-            padding: 4px 11px;
-            border-radius: 100px;
-            background: var(--accent-light);
-            color: #92400E;
-            letter-spacing: 0.04em;
-            text-transform: uppercase;
-        }
-
-        h1 {
-            font-family: 'Lora', serif;
-            font-size: clamp(28px, 5vw, 44px);
-            font-weight: 600;
-            line-height: 1.2;
-            color: var(--text);
-            margin-bottom: 18px;
-        }
-
-        .subtitle {
-            font-family: 'Lora', serif;
-            font-size: 20px;
-            color: var(--text-2);
-            line-height: 1.6;
-            margin-bottom: 28px;
-            font-style: italic;
-        }
-
-        .post-meta {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            font-size: 14px;
-            color: var(--text-3);
-            padding-bottom: 40px;
-            border-bottom: 1px solid var(--border);
-            margin-bottom: 40px;
-        }
-
-        .dot {
-            color: var(--border);
-        }
-
-        h2 {
-            font-family: 'Lora', serif;
-            font-size: 27px;
-            font-weight: 600;
-            color: var(--text);
-            margin: 56px 0 16px;
-            line-height: 1.3;
-        }
-
-        h3 {
-            font-size: 18px;
-            font-weight: 500;
-            color: var(--text);
-            margin: 32px 0 12px;
-        }
-
-        p {
-            margin-bottom: 20px;
-        }
-
-        strong {
-            font-weight: 500;
-        }
-
-        em {
-            font-family: 'Lora', serif;
-        }
-
-        a {
-            color: var(--accent);
-            text-decoration: underline;
-            text-underline-offset: 3px;
-        }
-
-        code {
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 13.5px;
-            background: #F5F5F4;
-            border: 1px solid var(--border);
-            padding: 2px 6px;
-            border-radius: 4px;
-            color: #7C3AED;
-        }
-
-        .code-label {
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 10px;
-            color: var(--text-3);
-            letter-spacing: 0.08em;
-            text-transform: uppercase;
-            margin-bottom: 4px;
-        }
-
-        pre {
-            background: var(--code-bg);
-            color: var(--code-text);
-            border-radius: 10px;
-            padding: 22px 26px;
-            overflow-x: auto;
-            margin: 6px 0 28px;
-            font-size: 13.5px;
-            line-height: 1.7;
-        }
-
-        pre code {
-            background: none;
-            border: none;
-            padding: 0;
-            color: inherit;
-            font-size: inherit;
-        }
-
-        .callout {
-            border-radius: 10px;
-            padding: 18px 22px;
-            margin: 30px 0;
-            border-left: 3px solid;
-        }
-
-        .callout-title {
-            font-size: 11px;
-            font-weight: 500;
-            letter-spacing: 0.06em;
-            text-transform: uppercase;
-            margin-bottom: 10px;
-        }
-
-        .callout p:last-child {
-            margin-bottom: 0;
-        }
-
-        .callout p {
-            font-size: 15.5px;
-            line-height: 1.7;
-        }
-
-        .callout-concept {
-            background: #EFF6FF;
-            border-color: #3B82F6;
-        }
-
-        .callout-concept .callout-title {
-            color: #1D4ED8;
-        }
-
-        .callout-warning {
-            background: #FFFBEB;
-            border-color: var(--accent);
-        }
-
-        .callout-warning .callout-title {
-            color: #92400E;
-        }
-
-        .diagram-wrap {
-            margin: 40px 0;
-            background: #FFFFFF;
-            border: 1px solid var(--border);
-            border-radius: 14px;
-            padding: 28px 20px 14px;
-        }
-
-        .diagram-caption {
-            text-align: center;
-            font-size: 13px;
-            color: var(--text-3);
-            margin-top: 14px;
-            font-style: italic;
-            line-height: 1.5;
-        }
-
-        ul {
-            padding-left: 0;
-            list-style: none;
-            margin-bottom: 20px;
-        }
-
-        ul li {
-            position: relative;
-            padding-left: 22px;
-            margin-bottom: 12px;
-        }
-
-        ul li::before {
-            content: '';
-            position: absolute;
-            left: 0;
-            top: 11px;
-            width: 6px;
-            height: 6px;
-            border-radius: 50%;
-            background: var(--accent);
-        }
-
-        hr {
-            border: none;
-            border-top: 1px solid var(--border);
-            margin: 52px 0;
-        }
-
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            margin: 20px 0;
-            font-size: 15px;
-        }
-
-        th {
-            background: #F5F5F4;
-            padding: 10px 14px;
-            text-align: left;
-            font-weight: 500;
-            font-size: 11.5px;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-            color: var(--text-2);
-            border-bottom: 1px solid var(--border);
-        }
-
-        td {
-            padding: 11px 14px;
-            border-bottom: 1px solid var(--border);
-        }
-
-        tr:last-child td {
-            border-bottom: none;
-        }
-
-        td:first-child {
-            color: var(--text-2);
-            font-size: 14px;
-        }
-
-        td code {
-            font-size: 12px;
-        }
-
-        .post-footer {
-            margin-top: 64px;
-            padding-top: 32px;
-            border-top: 1px solid var(--border);
-            font-size: 14px;
-            color: var(--text-3);
-            line-height: 1.7;
-        }
-
-        .tech-stack {
-          font-size: 14px;
-          color: var(--text-2);
-          margin-bottom: 20px;
-        }
-    </style>
-</head>
-
-<body>
     <div class="container">
-
-        <header>
-            <div class="post-tags">
-                <span class="tag">pnpm</span>
-                <span class="tag">npm</span>
-                <span class="tag">Docker</span>
-                <span class="tag">Jest</span>
-                <span class="tag">Node.js</span>
-                <span class="tag">DevOps</span>
-            </div>
-            <h1>Everything Worked — Until We Actually Checked</h1>
-            <p class="subtitle">Our npm → pnpm migration uncovered a phantom dependency silently hiding in production, a
-                Jest 30 resolver that wouldn't cooperate, and a Docker setup that was wrong from day one.</p>
-
-            <!-- ADD THIS BLOCK -->
-            <p class="tech-stack">
-                Tech Stack: Node.js · pnpm · Jest · Docker
-            </p>
-            
-            <div class="post-meta">
-                <span>Adarsh</span>
-                <span class="dot">·</span>
-                <span>8 min read</span>
-            </div>
-        </header>
-
-        <p>There's a particular kind of dread that comes from discovering your software has been working by accident —
-            not by design, but by coincidence. A hidden assumption that held up locally, sailed through CI, shipped to
-            production, and nobody noticed because nothing explicitly broke.</p>
-
-        <p>That’s exactly where we found ourselves when we migrated from npm to pnpm while developing a production-grade cashout service. 
-            What we expected was a routine tooling upgrade. What we got was a mirror held up to our dependency management — and the reflection wasn’t clean.</p>
-
-        <p>This is the full story: why we made the switch, what broke, <em>why</em> each thing broke (not just that it
-            did), and what we'd tell anyone else planning the same migration.</p>
-
-
-        <h2>What Even Is pnpm?</h2>
-
-        <div class="callout callout-concept">
-            <div class="callout-title">💡 Concept — pnpm</div>
-            <p><strong>pnpm</strong> (performant npm) is an alternative Node.js package manager. Where npm and yarn
-                install packages into a flat, hoisted <code>node_modules</code> directory, pnpm uses a
-                <strong>content-addressable store</strong> — a global cache on your machine where each version of every
-                package is stored exactly once, with symlinks connecting projects to only what they actually declared.
-                The result: faster installs, significantly less disk usage, and crucially — <strong>strict dependency
-                    isolation</strong> that prevents packages from accessing anything they never formally declared.</p>
+      <!-- ══════════════════════════════════════════════════════
+         ARTICLE HEADER
+         ═════════════════════════════════════════════════════ -->
+      <header>
+        <!-- Taxonomy tags — purely decorative / visual -->
+        <div class="post-tags" aria-label="Article tags">
+          <span class="tag">pnpm</span>
+          <span class="tag">npm</span>
+          <span class="tag">Docker</span>
+          <span class="tag">Jest</span>
+          <span class="tag">Node.js</span>
+          <span class="tag">DevOps</span>
         </div>
 
-        <p>The promise is simple: faster, leaner, and more correct than npm. But "more correct" cuts both ways. pnpm
-            will fail loudly on things npm silently permitted. For most teams, that's the entire point — you want those
-            failures in your terminal, not waiting to surface in a container at 2am on a Friday.</p>
+        <h1 class="post-title">
+          Everything Worked — Until We Actually Checked
+        </h1>
 
+        <p class="post-subtitle">
+          Our npm&nbsp;→&nbsp;pnpm migration uncovered a phantom dependency
+          silently hiding in production, a Jest&nbsp;30 resolver that wouldn't
+          cooperate, and a Docker setup that was wrong from day one.
+        </p>
 
-        <h2>Why We Made the Switch</h2>
+        <!-- Tech stack indicator — mono typeface for a code-adjacent feel -->
+        <p class="tech-stack">
+          Node.js &nbsp;·&nbsp; pnpm &nbsp;·&nbsp; Jest &nbsp;·&nbsp; Docker
+        </p>
 
-        <p>Our reasons were practical, not ideological:</p>
+        <div class="post-meta">
+          <span class="author-name">Adarsh</span>
+          <span class="dot" aria-hidden="true">·</span>
+          <span>8 min read</span>
+          <span class="dot" aria-hidden="true">·</span>
+          <span>Personal experience</span>
+        </div>
+      </header>
 
-        <ul>
-            <li><strong>Build reproducibility.</strong> npm's install behavior can drift subtly across machines and
-                environments. pnpm's lockfile-driven installs are deterministic by design — same dependencies, same
-                structure, every single time.</li>
-            <li><strong>Performance.</strong> The content-addressable store means packages shared across projects are
-                stored once and symlinked rather than duplicated. Installs on shared CI machines become dramatically
-                faster over time.</li>
-            <li><strong>Production confidence.</strong> We were containerising the app for deployment. We wanted the
-                dependency tree inside the Docker image to be an accurate representation of what was declared — not an
-                artefact of npm's hoisting behavior.</li>
-        </ul>
+      <!-- ══════════════════════════════════════════════════════
+         ARTICLE BODY
+         ═════════════════════════════════════════════════════ -->
+      <main id="main-content">
+        <article>
+          <!-- ── Opening ── -->
+          <p>
+            There's a particular kind of dread that comes from discovering your
+            software has been working <em>by accident</em> — not by design, but
+            by coincidence. A hidden assumption that held up locally, sailed
+            through CI, shipped to production, and nobody noticed because
+            nothing explicitly broke.
+          </p>
 
-        <p>Reasonable goals. But switching package managers on an active, production-bound codebase is rarely as simple
-            as running a single command. Here's how it actually went.</p>
+          <p>
+            That's exactly where I found myself when we migrated from npm to
+            pnpm while building a production-grade cashout service. What I
+            expected was a routine tooling upgrade. What I got was a mirror held
+            up to our dependency management — and the reflection wasn't clean.
+          </p>
 
+          <p>
+            This is the full story: why we made the switch, what broke,
+            <em>why</em>
+            each thing broke (not just that it did), and what I'd tell anyone
+            else planning the same migration. I'm writing this partly as
+            documentation for my team and partly because I wish I'd had
+            something like this before we started.
+          </p>
 
-        <h2>How npm and pnpm Handle Dependencies Differently</h2>
+          <!-- ── Section: What Is pnpm ── -->
+          <h2>What Even Is pnpm?</h2>
 
-        <p>Before getting into what broke, it's worth understanding the architectural difference at the root of almost
-            every issue we hit.</p>
+          <div class="callout callout-concept">
+            <div class="callout-title">
+              <span aria-hidden="true">💡</span> Concept — pnpm
+            </div>
+            <p>
+              <strong>pnpm</strong> (performant npm) is an alternative Node.js
+              package manager. Where npm and yarn install packages into a flat,
+              hoisted <code>node_modules</code> directory, pnpm uses a
+              <strong>content-addressable store</strong> — a global cache on
+              your machine where each version of every package is stored exactly
+              once, with symlinks connecting projects to only what they actually
+              declared. The result: faster installs, significantly less disk
+              usage, and crucially —
+              <strong>strict dependency isolation</strong> that prevents
+              packages from accessing anything they never formally declared.
+            </p>
+          </div>
 
-        <div class="diagram-wrap">
-            <svg width="100%" viewBox="0 0 680 258" role="img">
-                <title>npm flat resolution vs pnpm strict isolation</title>
-                <desc>Side-by-side comparison: npm hoists all packages including undeclared ones into a flat
-                    node_modules directory. pnpm strictly isolates packages so only declared dependencies are
-                    accessible.</desc>
+          <p>
+            The promise is simple: faster, leaner, and more correct than npm.
+            But "more correct" cuts both ways. pnpm will fail loudly on things
+            npm silently permitted. For most teams, that's the entire point —
+            you want those failures in your terminal, not waiting to surface in
+            a container at 2am on a Friday.
+          </p>
+
+          <!-- ── Section: Why We Switched ── -->
+          <h2>Why We Made the Switch</h2>
+
+          <p>Our reasons were practical, not ideological:</p>
+
+          <ul>
+            <li>
+              <strong>Build reproducibility.</strong> npm's install behaviour
+              can drift subtly across machines and environments. pnpm's
+              lockfile-driven installs are deterministic by design — same
+              dependencies, same structure, every single time.
+            </li>
+            <li>
+              <strong>Performance.</strong> The content-addressable store means
+              packages shared across projects are stored once and symlinked
+              rather than duplicated. Installs on shared CI machines become
+              dramatically faster over time.
+            </li>
+            <li>
+              <strong>Production confidence.</strong> We were containerising the
+              app for deployment. We wanted the dependency tree inside the
+              Docker image to be an accurate representation of what was declared
+              — not an artefact of npm's hoisting behaviour.
+            </li>
+          </ul>
+
+          <p>
+            Reasonable goals. But switching package managers on an active,
+            production-bound codebase is rarely as simple as running a single
+            command. Here's how it actually went.
+          </p>
+
+          <!-- ── Section: How They Differ ── -->
+          <h2>How npm and pnpm Handle Dependencies Differently</h2>
+
+          <p>
+            Before getting into what broke, it's worth understanding the
+            architectural difference at the root of almost every issue we hit.
+          </p>
+
+          <!-- ───────────────────────────────────────────────────────
+             DIAGRAM 1: npm flat hoisting vs. pnpm strict isolation
+             Two-panel side-by-side showing filesystem structure,
+             phantom dependency access, and virtual store isolation.
+             viewBox: 720 × 330 — scales via width="100%"
+             ─────────────────────────────────────────────────────── -->
+          <div class="diagram-wrap">
+            <div class="diagram-scroll">
+              <svg
+                width="100%"
+                viewBox="0 0 720 330"
+                xmlns="http://www.w3.org/2000/svg"
+                role="img"
+                aria-labelledby="diag1-title diag1-desc"
+              >
+                <title id="diag1-title">
+                  npm flat hoisting versus pnpm strict isolation
+                </title>
+                <desc id="diag1-desc">
+                  Left panel shows npm hoisting all packages — including
+                  undeclared ones — into a single flat node_modules directory,
+                  making phantom dependencies silently accessible. Right panel
+                  shows pnpm's virtual store architecture where only declared
+                  packages are reachable via symlinks, and undeclared packages
+                  are isolated inside the .pnpm/ store.
+                </desc>
+
+                <!-- ── Arrow marker definitions ── -->
                 <defs>
-                    <marker id="a1" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6"
-                        orient="auto-start-reverse">
-                        <path d="M2 1L8 5L2 9" fill="none" stroke="#9CA3AF" stroke-width="1.5" stroke-linecap="round"
-                            stroke-linejoin="round" />
-                    </marker>
-                    <marker id="ag" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6"
-                        orient="auto-start-reverse">
-                        <path d="M2 1L8 5L2 9" fill="none" stroke="#16A34A" stroke-width="1.5" stroke-linecap="round"
-                            stroke-linejoin="round" />
-                    </marker>
-                    <marker id="ar" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6"
-                        orient="auto-start-reverse">
-                        <path d="M2 1L8 5L2 9" fill="none" stroke="#EF4444" stroke-width="1.5" stroke-linecap="round"
-                            stroke-linejoin="round" />
-                    </marker>
+                  <!-- Default gray arrow -->
+                  <marker
+                    id="arr-gray"
+                    viewBox="0 0 10 10"
+                    refX="9"
+                    refY="5"
+                    markerWidth="6"
+                    markerHeight="6"
+                    orient="auto-start-reverse"
+                  >
+                    <path
+                      d="M1.5 1.5L8.5 5L1.5 8.5"
+                      fill="none"
+                      stroke="#9CA3AF"
+                      stroke-width="1.8"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    />
+                  </marker>
+                  <!-- Green arrow for pnpm declared path -->
+                  <marker
+                    id="arr-green"
+                    viewBox="0 0 10 10"
+                    refX="9"
+                    refY="5"
+                    markerWidth="6"
+                    markerHeight="6"
+                    orient="auto-start-reverse"
+                  >
+                    <path
+                      d="M1.5 1.5L8.5 5L1.5 8.5"
+                      fill="none"
+                      stroke="#16A34A"
+                      stroke-width="1.8"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    />
+                  </marker>
+                  <!-- Red arrow for phantom / blocked access -->
+                  <marker
+                    id="arr-red"
+                    viewBox="0 0 10 10"
+                    refX="9"
+                    refY="5"
+                    markerWidth="6"
+                    markerHeight="6"
+                    orient="auto-start-reverse"
+                  >
+                    <path
+                      d="M1.5 1.5L8.5 5L1.5 8.5"
+                      fill="none"
+                      stroke="#EF4444"
+                      stroke-width="1.8"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    />
+                  </marker>
+                  <!-- Orange arrow for phantom dep in npm -->
+                  <marker
+                    id="arr-orange"
+                    viewBox="0 0 10 10"
+                    refX="9"
+                    refY="5"
+                    markerWidth="6"
+                    markerHeight="6"
+                    orient="auto-start-reverse"
+                  >
+                    <path
+                      d="M1.5 1.5L8.5 5L1.5 8.5"
+                      fill="none"
+                      stroke="#D97706"
+                      stroke-width="1.8"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    />
+                  </marker>
                 </defs>
 
-                <!-- LEFT PANEL: npm -->
-                <rect x="10" y="8" width="318" height="234" rx="10" fill="#F9FAFB" stroke="#E5E7EB" stroke-width="1" />
-                <rect x="65" y="18" width="198" height="23" rx="11" fill="#E0E7FF" />
-                <text x="164" y="30" text-anchor="middle" dominant-baseline="central" font-family="DM Sans,sans-serif"
-                    font-size="12" font-weight="500" fill="#4338CA">npm — flat resolution</text>
-                <rect x="100" y="52" width="128" height="38" rx="6" fill="#EDE9FE" stroke="#8B5CF6" stroke-width="1" />
-                <text x="164" y="71" text-anchor="middle" dominant-baseline="central"
-                    font-family="JetBrains Mono,monospace" font-size="12.5" fill="#5B21B6">your-app</text>
-                <line x1="164" y1="90" x2="164" y2="114" stroke="#9CA3AF" stroke-width="1.5" marker-end="url(#a1)" />
-                <text x="175" y="104" font-family="DM Sans,sans-serif" font-size="10" fill="#9CA3AF">can access
-                    all</text>
-                <rect x="28" y="116" width="272" height="106" rx="6" fill="none" stroke="#D1D5DB" stroke-width="1"
-                    stroke-dasharray="4 3" />
-                <text x="44" y="132" font-family="JetBrains Mono,monospace" font-size="10.5"
-                    fill="#A8A29E">node_modules/ (flat)</text>
-                <rect x="44" y="142" width="98" height="20" rx="4" fill="#FEF3C7" stroke="#F59E0B" stroke-width="0.8" />
-                <text x="93" y="152" text-anchor="middle" dominant-baseline="central"
-                    font-family="JetBrains Mono,monospace" font-size="10" fill="#92400E">json-bigint</text>
-                <text x="148" y="152" dominant-baseline="central" font-family="DM Sans,sans-serif" font-size="10"
-                    fill="#DC2626">← phantom dep!</text>
-                <text x="44" y="178" font-family="JetBrains Mono,monospace" font-size="10.5"
-                    fill="#9CA3AF">some-package</text>
-                <text x="44" y="198" font-family="JetBrains Mono,monospace" font-size="10.5"
-                    fill="#9CA3AF">other-dep</text>
-                <text x="164" y="238" text-anchor="middle" font-family="DM Sans,sans-serif" font-size="10.5"
-                    fill="#9CA3AF">Undeclared packages silently reachable</text>
+                <!-- ═══════════════════════════════════════
+                   LEFT PANEL — npm
+                   ═══════════════════════════════════════ -->
 
-                <!-- DIVIDER -->
-                <line x1="340" y1="18" x2="340" y2="234" stroke="#E5E7EB" stroke-width="1" stroke-dasharray="2 3" />
+                <!-- Panel background -->
+                <rect
+                  x="6"
+                  y="6"
+                  width="346"
+                  height="318"
+                  rx="10"
+                  fill="#FAFAF9"
+                  stroke="#E5E7EB"
+                  stroke-width="1"
+                />
 
-                <!-- RIGHT PANEL: pnpm -->
-                <rect x="352" y="8" width="318" height="234" rx="10" fill="#F0FDF4" stroke="#BBF7D0" stroke-width="1" />
-                <rect x="397" y="18" width="226" height="23" rx="11" fill="#DCFCE7" />
-                <text x="510" y="30" text-anchor="middle" dominant-baseline="central" font-family="DM Sans,sans-serif"
-                    font-size="12" font-weight="500" fill="#15803D">pnpm — strict isolation</text>
-                <rect x="444" y="52" width="132" height="38" rx="6" fill="#EDE9FE" stroke="#8B5CF6" stroke-width="1" />
-                <text x="510" y="71" text-anchor="middle" dominant-baseline="central"
-                    font-family="JetBrains Mono,monospace" font-size="12.5" fill="#5B21B6">your-app</text>
-                <line x1="510" y1="90" x2="510" y2="114" stroke="#16A34A" stroke-width="1.5" marker-end="url(#ag)" />
-                <rect x="444" y="116" width="132" height="36" rx="6" fill="#DCFCE7" stroke="#16A34A" stroke-width="1" />
-                <text x="510" y="134" text-anchor="middle" dominant-baseline="central"
-                    font-family="JetBrains Mono,monospace" font-size="11" fill="#15803D">some-package ✓</text>
-                <path d="M576,70 L614,70 L614,160" fill="none" stroke="#EF4444" stroke-width="1" stroke-dasharray="4 2"
-                    marker-end="url(#ar)" />
-                <text x="619" y="112" font-family="DM Sans,sans-serif" font-size="10" fill="#EF4444">blocked</text>
-                <rect x="556" y="162" width="106" height="40" rx="6" fill="#FEF2F2" stroke="#FCA5A5" stroke-width="1"
-                    stroke-dasharray="3 2" />
-                <text x="609" y="179" text-anchor="middle" dominant-baseline="central"
-                    font-family="JetBrains Mono,monospace" font-size="10" fill="#DC2626">json-bigint</text>
-                <text x="609" y="194" text-anchor="middle" dominant-baseline="central" font-family="DM Sans,sans-serif"
-                    font-size="10" fill="#DC2626">isolated in .pnpm/</text>
-                <text x="510" y="238" text-anchor="middle" font-family="DM Sans,sans-serif" font-size="10.5"
-                    fill="#6B7280">Only declared deps are accessible</text>
-            </svg>
-            <p class="diagram-caption">Fig 1. npm hoists everything into a flat directory — even packages you never
-                declared become reachable. pnpm isolates each package strictly. If you didn't declare it, you can't use
-                it.</p>
-        </div>
+                <!-- Panel title pill -->
+                <rect
+                  x="34"
+                  y="16"
+                  width="290"
+                  height="26"
+                  rx="13"
+                  fill="#E0E7FF"
+                />
+                <text
+                  x="179"
+                  y="29"
+                  text-anchor="middle"
+                  dominant-baseline="central"
+                  font-family="DM Sans,sans-serif"
+                  font-size="12.5"
+                  font-weight="500"
+                  fill="#3730A3"
+                >
+                  npm · Flat Hoisting
+                </text>
 
+                <!-- "your-app" source box -->
+                <rect
+                  x="110"
+                  y="54"
+                  width="138"
+                  height="36"
+                  rx="7"
+                  fill="#EDE9FE"
+                  stroke="#8B5CF6"
+                  stroke-width="1.2"
+                />
+                <text
+                  x="179"
+                  y="72"
+                  text-anchor="middle"
+                  dominant-baseline="central"
+                  font-family="JetBrains Mono,monospace"
+                  font-size="13"
+                  fill="#5B21B6"
+                >
+                  your-app
+                </text>
 
-        <h2>The First Crack: A Dependency We Never Declared</h2>
+                <!-- "can access all" label and arrow -->
+                <text
+                  x="192"
+                  y="105"
+                  font-family="DM Sans,sans-serif"
+                  font-size="10"
+                  fill="#9CA3AF"
+                >
+                  can access everything ↓
+                </text>
+                <line
+                  x1="179"
+                  y1="90"
+                  x2="179"
+                  y2="114"
+                  stroke="#9CA3AF"
+                  stroke-width="1.5"
+                  marker-end="url(#arr-gray)"
+                />
 
-        <p>The very first error after switching to pnpm and running the app was this:</p>
+                <!-- node_modules flat container -->
+                <rect
+                  x="18"
+                  y="116"
+                  width="322"
+                  height="164"
+                  rx="7"
+                  fill="none"
+                  stroke="#D1D5DB"
+                  stroke-width="1"
+                  stroke-dasharray="5 3"
+                />
+                <text
+                  x="32"
+                  y="131"
+                  font-family="JetBrains Mono,monospace"
+                  font-size="10.5"
+                  fill="#A8A29E"
+                >
+                  node_modules/ (flat — everything at the same level)
+                </text>
 
-        <div class="code-label">runtime error</div>
-        <pre><code>Error: Cannot find module 'json-bigint'</code></pre>
+                <!-- Package: express (declared) -->
+                <rect
+                  x="28"
+                  y="140"
+                  width="100"
+                  height="26"
+                  rx="5"
+                  fill="#F3F4F6"
+                  stroke="#D1D5DB"
+                  stroke-width="0.8"
+                />
+                <text
+                  x="78"
+                  y="153"
+                  text-anchor="middle"
+                  dominant-baseline="central"
+                  font-family="JetBrains Mono,monospace"
+                  font-size="10.5"
+                  fill="#6B7280"
+                >
+                  express
+                </text>
 
-        <p>Confusing at first glance. We could see <code>require('json-bigint')</code> right there in the source. The
-            file existed. But searching <code>package.json</code> — it wasn't there. Not in <code>dependencies</code>,
-            not in <code>devDependencies</code>. It had simply never been declared.</p>
+                <!-- Package: some-lib (declared) -->
+                <rect
+                  x="138"
+                  y="140"
+                  width="100"
+                  height="26"
+                  rx="5"
+                  fill="#F3F4F6"
+                  stroke="#D1D5DB"
+                  stroke-width="0.8"
+                />
+                <text
+                  x="188"
+                  y="153"
+                  text-anchor="middle"
+                  dominant-baseline="central"
+                  font-family="JetBrains Mono,monospace"
+                  font-size="10.5"
+                  fill="#6B7280"
+                >
+                  some-lib
+                </text>
 
-        <p>With npm, this had worked silently for the entire life of the project. The reason: some other package in our
-            dependency tree depended on <code>json-bigint</code>, and npm hoisted it up to the top-level
-            <code>node_modules</code> so our code could reach for it as if it were installed directly. Classic npm —
-            helpful to a fault.</p>
+                <!-- Package: other-dep (declared) -->
+                <rect
+                  x="248"
+                  y="140"
+                  width="82"
+                  height="26"
+                  rx="5"
+                  fill="#F3F4F6"
+                  stroke="#D1D5DB"
+                  stroke-width="0.8"
+                />
+                <text
+                  x="289"
+                  y="153"
+                  text-anchor="middle"
+                  dominant-baseline="central"
+                  font-family="JetBrains Mono,monospace"
+                  font-size="10.5"
+                  fill="#6B7280"
+                >
+                  other-dep
+                </text>
 
-        <div class="callout callout-warning">
-            <div class="callout-title">⚠️ Concept — Phantom Dependencies</div>
-            <p>A <strong>phantom dependency</strong> (also called an implicit or ghost dependency) is a package your
-                code uses but doesn't explicitly declare in <code>package.json</code>. With npm's flat hoisting, these
-                can work silently for years. The danger: if the package that actually declared it upstream updates or
-                removes it, your build breaks — with no warning, no clear error message, and no obvious pointer to the
-                root cause. You've been depending on someone else's transitive dependency without knowing it.</p>
-        </div>
+                <!-- Divider inside node_modules -->
+                <line
+                  x1="28"
+                  y1="177"
+                  x2="330"
+                  y2="177"
+                  stroke="#E5E7EB"
+                  stroke-width="0.8"
+                  stroke-dasharray="3 3"
+                />
 
-        <p>pnpm's strict isolation model doesn't allow this. Each package can only access what it has declared. Our app
-            had been secretly depending on <code>json-bigint</code> through a transitive chain — and pnpm exposed that
-            as the latent defect it was.</p>
+                <!-- Package: json-bigint (PHANTOM — not in package.json) -->
+                <rect
+                  x="28"
+                  y="183"
+                  width="122"
+                  height="36"
+                  rx="5"
+                  fill="#FEF3C7"
+                  stroke="#F59E0B"
+                  stroke-width="1.2"
+                />
+                <text
+                  x="89"
+                  y="196"
+                  text-anchor="middle"
+                  dominant-baseline="central"
+                  font-family="JetBrains Mono,monospace"
+                  font-size="11"
+                  fill="#92400E"
+                >
+                  json-bigint
+                </text>
+                <text
+                  x="89"
+                  y="210"
+                  text-anchor="middle"
+                  dominant-baseline="central"
+                  font-family="DM Sans,sans-serif"
+                  font-size="9.5"
+                  fill="#B45309"
+                >
+                  ⚠ NOT in package.json
+                </text>
 
-        <p>The fix took ten seconds:</p>
+                <!-- Other transitive packages -->
+                <rect
+                  x="162"
+                  y="183"
+                  width="80"
+                  height="36"
+                  rx="5"
+                  fill="#F9FAFB"
+                  stroke="#E5E7EB"
+                  stroke-width="0.8"
+                />
+                <text
+                  x="202"
+                  y="201"
+                  text-anchor="middle"
+                  dominant-baseline="central"
+                  font-family="JetBrains Mono,monospace"
+                  font-size="10"
+                  fill="#9CA3AF"
+                >
+                  dep-a
+                </text>
 
-        <div class="code-label">terminal</div>
-        <pre><code>pnpm add json-bigint</code></pre>
+                <rect
+                  x="252"
+                  y="183"
+                  width="78"
+                  height="36"
+                  rx="5"
+                  fill="#F9FAFB"
+                  stroke="#E5E7EB"
+                  stroke-width="0.8"
+                />
+                <text
+                  x="291"
+                  y="201"
+                  text-anchor="middle"
+                  dominant-baseline="central"
+                  font-family="JetBrains Mono,monospace"
+                  font-size="10"
+                  fill="#9CA3AF"
+                >
+                  dep-b
+                </text>
 
-        <p>But the real value here wasn't the fix. It was the signal. Had that transitive dependency ever been removed
-            or version-bumped away upstream, the failure would have landed in production with no direct explanation.
-            pnpm surfaced that risk before it could matter.</p>
+                <!-- Phantom access arrow: your-app → json-bigint -->
+                <path
+                  d="M128,90 L89,179"
+                  fill="none"
+                  stroke="#D97706"
+                  stroke-width="1.5"
+                  stroke-dasharray="5 3"
+                  marker-end="url(#arr-orange)"
+                />
+                <text
+                  x="78"
+                  y="145"
+                  text-anchor="middle"
+                  font-family="DM Sans,sans-serif"
+                  font-size="9.5"
+                  fill="#D97706"
+                  font-style="italic"
+                >
+                  secretly used!
+                </text>
 
+                <!-- Bottom label -->
+                <text
+                  x="179"
+                  y="298"
+                  text-anchor="middle"
+                  font-family="DM Sans,sans-serif"
+                  font-size="11"
+                  fill="#9CA3AF"
+                >
+                  All hoisted packages are reachable — declared or not
+                </text>
+                <text
+                  x="179"
+                  y="314"
+                  text-anchor="middle"
+                  font-family="DM Sans,sans-serif"
+                  font-size="10.5"
+                  font-style="italic"
+                  fill="#EF4444"
+                >
+                  Phantom deps silently work. Until they don't.
+                </text>
 
-        <h2>The Jest 30 Surprise</h2>
+                <!-- ═══════════════════════════════════════
+                   VERTICAL DIVIDER
+                   ═══════════════════════════════════════ -->
+                <line
+                  x1="360"
+                  y1="14"
+                  x2="360"
+                  y2="316"
+                  stroke="#E5E7EB"
+                  stroke-width="1"
+                  stroke-dasharray="2 4"
+                />
 
-        <p>Dependencies clean, time to run the test suite. We ran <code>pnpm test</code>, and Jest 30 — our test runner
-            — threw this immediately:</p>
+                <!-- ═══════════════════════════════════════
+                   RIGHT PANEL — pnpm
+                   ═══════════════════════════════════════ -->
 
-        <div class="code-label">jest output</div>
-        <pre><code>Module &lt;rootDir&gt;/tests/__config__/jest.setup.js was not found</code></pre>
+                <!-- Panel background — light green tint -->
+                <rect
+                  x="368"
+                  y="6"
+                  width="346"
+                  height="318"
+                  rx="10"
+                  fill="#F8FFFE"
+                  stroke="#A7F3D0"
+                  stroke-width="1"
+                />
 
-        <p>The setup file clearly existed. The path in <code>jest.config.js</code> was correct. Nothing had moved.
-            Something deeper was failing and surfacing as a misleading "file not found" error.</p>
+                <!-- Panel title pill -->
+                <rect
+                  x="396"
+                  y="16"
+                  width="290"
+                  height="26"
+                  rx="13"
+                  fill="#D1FAE5"
+                />
+                <text
+                  x="541"
+                  y="29"
+                  text-anchor="middle"
+                  dominant-baseline="central"
+                  font-family="DM Sans,sans-serif"
+                  font-size="12.5"
+                  font-weight="500"
+                  fill="#065F46"
+                >
+                  pnpm · Strict Isolation
+                </text>
 
-        <h3>What was actually happening</h3>
+                <!-- "your-app" source box -->
+                <rect
+                  x="472"
+                  y="54"
+                  width="138"
+                  height="36"
+                  rx="7"
+                  fill="#EDE9FE"
+                  stroke="#8B5CF6"
+                  stroke-width="1.2"
+                />
+                <text
+                  x="541"
+                  y="72"
+                  text-anchor="middle"
+                  dominant-baseline="central"
+                  font-family="JetBrains Mono,monospace"
+                  font-size="13"
+                  fill="#5B21B6"
+                >
+                  your-app
+                </text>
 
-        <p>Jest 30 introduced a new file resolution engine called <code>@unrs/resolver</code> — a Rust-based native
-            module that replaces the previous pure-JavaScript resolver. It's faster, but it depends on
-            <strong>platform-specific binary bindings</strong> that need to be present and correctly accessible at
-            runtime.</p>
+                <!-- "declared only" label and arrow -->
+                <text
+                  x="558"
+                  y="105"
+                  font-family="DM Sans,sans-serif"
+                  font-size="10"
+                  fill="#16A34A"
+                >
+                  declared deps only ↓
+                </text>
+                <line
+                  x1="541"
+                  y1="90"
+                  x2="541"
+                  y2="114"
+                  stroke="#16A34A"
+                  stroke-width="1.5"
+                  marker-end="url(#arr-green)"
+                />
 
-        <div class="callout callout-concept">
-            <div class="callout-title">💡 Concept — @unrs/resolver and native bindings</div>
-            <p><code>@unrs/resolver</code> is Jest 30's new file resolution engine, written in Rust and compiled to a
-                native Node.js addon. Distributed as <strong>optional platform dependencies</strong> (separate packages
-                per OS/architecture), it relies on these binaries being reachable at runtime. Under npm, optional
-                dependencies are installed permissively and fallback behavior masks failures. Under pnpm's stricter
-                optional dependency handling, if the binary binding isn't found in the expected location, the resolver
-                doesn't gracefully degrade — it fails in a way that surfaces as a completely unrelated-looking "module
-                not found" error. The misleading error message is the worst part: it sends you debugging the wrong thing
-                entirely.</p>
-        </div>
+                <!-- node_modules — only declared deps via symlinks -->
+                <rect
+                  x="380"
+                  y="116"
+                  width="216"
+                  height="82"
+                  rx="7"
+                  fill="#ECFDF5"
+                  stroke="#6EE7B7"
+                  stroke-width="1.2"
+                />
+                <text
+                  x="396"
+                  y="131"
+                  font-family="JetBrains Mono,monospace"
+                  font-size="10"
+                  fill="#6B7280"
+                >
+                  node_modules/ (symlinks → declared only)
+                </text>
 
-        <p>The pragmatic fix: step back to Jest 29, which uses a pure-JavaScript resolver with no native binary
-            dependencies and no platform-specific complications.</p>
+                <!-- Symlink: express (declared) -->
+                <rect
+                  x="390"
+                  y="138"
+                  width="96"
+                  height="26"
+                  rx="5"
+                  fill="#D1FAE5"
+                  stroke="#6EE7B7"
+                  stroke-width="0.8"
+                />
+                <text
+                  x="438"
+                  y="151"
+                  text-anchor="middle"
+                  dominant-baseline="central"
+                  font-family="JetBrains Mono,monospace"
+                  font-size="10"
+                  fill="#065F46"
+                >
+                  → express ✓
+                </text>
 
-        <div class="code-label">terminal</div>
-        <pre><code>pnpm add -D jest@29</code></pre>
+                <!-- Symlink: some-lib (declared) -->
+                <rect
+                  x="496"
+                  y="138"
+                  width="92"
+                  height="26"
+                  rx="5"
+                  fill="#D1FAE5"
+                  stroke="#6EE7B7"
+                  stroke-width="0.8"
+                />
+                <text
+                  x="542"
+                  y="151"
+                  text-anchor="middle"
+                  dominant-baseline="central"
+                  font-family="JetBrains Mono,monospace"
+                  font-size="10"
+                  fill="#065F46"
+                >
+                  → some-lib ✓
+                </text>
 
-        <p>Jest 29 ran cleanly and reliably. The tradeoff is missing some Jest 30 features and performance improvements,
-            but for a production-bound project, "stable and reliable" wins over "newest" without question. We'll revisit
-            Jest 30 compatibility when the pnpm ecosystem fully catches up to it.</p>
+                <!-- Arrow: node_modules to virtual store -->
+                <line
+                  x1="488"
+                  y1="198"
+                  x2="488"
+                  y2="218"
+                  stroke="#D1D5DB"
+                  stroke-width="1.2"
+                  stroke-dasharray="3 3"
+                />
 
+                <!-- .pnpm/ virtual store container -->
+                <rect
+                  x="380"
+                  y="220"
+                  width="322"
+                  height="80"
+                  rx="7"
+                  fill="#FFF1F2"
+                  stroke="#FECACA"
+                  stroke-width="1"
+                />
+                <text
+                  x="396"
+                  y="236"
+                  font-family="JetBrains Mono,monospace"
+                  font-size="10"
+                  fill="#A8A29E"
+                >
+                  .pnpm/ (virtual store — isolated, not directly accessible)
+                </text>
 
-        <h2>Docker: The Container We Were Building Wrong</h2>
+                <!-- json-bigint in store — isolated -->
+                <rect
+                  x="390"
+                  y="244"
+                  width="130"
+                  height="44"
+                  rx="5"
+                  fill="#FEE2E2"
+                  stroke="#FCA5A5"
+                  stroke-width="1"
+                  stroke-dasharray="4 2"
+                />
+                <text
+                  x="455"
+                  y="260"
+                  text-anchor="middle"
+                  dominant-baseline="central"
+                  font-family="JetBrains Mono,monospace"
+                  font-size="10.5"
+                  fill="#DC2626"
+                >
+                  json-bigint
+                </text>
+                <text
+                  x="455"
+                  y="278"
+                  text-anchor="middle"
+                  dominant-baseline="central"
+                  font-family="DM Sans,sans-serif"
+                  font-size="9.5"
+                  fill="#EF4444"
+                >
+                  isolated in store
+                </text>
 
-        <p>Tests passing, dependencies clean. Time to build the Docker image. The build failed on the first attempt:</p>
+                <!-- Other packages in store -->
+                <rect
+                  x="530"
+                  y="244"
+                  width="80"
+                  height="44"
+                  rx="5"
+                  fill="#FEF9EF"
+                  stroke="#FDDCAF"
+                  stroke-width="0.8"
+                />
+                <text
+                  x="570"
+                  y="266"
+                  text-anchor="middle"
+                  dominant-baseline="central"
+                  font-family="JetBrains Mono,monospace"
+                  font-size="9"
+                  fill="#9CA3AF"
+                >
+                  express
+                </text>
 
-        <div class="code-label">docker build error</div>
-        <pre><code>cannot copy to non-directory: node_modules/...</code></pre>
+                <rect
+                  x="620"
+                  y="244"
+                  width="72"
+                  height="44"
+                  rx="5"
+                  fill="#FEF9EF"
+                  stroke="#FDDCAF"
+                  stroke-width="0.8"
+                />
+                <text
+                  x="656"
+                  y="266"
+                  text-anchor="middle"
+                  dominant-baseline="central"
+                  font-family="JetBrains Mono,monospace"
+                  font-size="9"
+                  fill="#9CA3AF"
+                >
+                  some-lib
+                </text>
 
-        <h3>The root cause</h3>
+                <!-- Blocked access: your-app trying to reach json-bigint -->
+                <path
+                  d="M490,90 Q610,150 530,248"
+                  fill="none"
+                  stroke="#EF4444"
+                  stroke-width="1.4"
+                  stroke-dasharray="4 3"
+                  marker-end="url(#arr-red)"
+                />
 
-        <p>Our Dockerfile used a common but problematic pattern: <code>COPY . .</code> to copy the entire project
-            directory into the container — including <code>node_modules</code>. Our local <code>node_modules</code> had
-            been installed by npm and had a flat structure. But pnpm uses a symlink-based structure in
-            <code>.pnpm/</code>. When Docker tried to copy an npm-style <code>node_modules</code> into a container where
-            pnpm was attempting to install its own version, the two structures conflicted in a way Docker couldn't
-            resolve.</p>
+                <!-- BLOCKED X symbol -->
+                <circle
+                  cx="558"
+                  cy="170"
+                  r="11"
+                  fill="#FEF2F2"
+                  stroke="#EF4444"
+                  stroke-width="1.2"
+                />
+                <line
+                  x1="552"
+                  y1="164"
+                  x2="564"
+                  y2="176"
+                  stroke="#EF4444"
+                  stroke-width="1.8"
+                  stroke-linecap="round"
+                />
+                <line
+                  x1="564"
+                  y1="164"
+                  x2="552"
+                  y2="176"
+                  stroke="#EF4444"
+                  stroke-width="1.8"
+                  stroke-linecap="round"
+                />
 
-        <div class="callout callout-concept">
-            <div class="callout-title">💡 Concept — Why you should never copy node_modules into Docker</div>
-            <p>Every package manager structures <code>node_modules</code> differently — npm uses flat hoisting, yarn
-                uses hoisting with workspaces, pnpm uses a symlinked virtual store. When you <code>COPY</code> a
-                locally-installed <code>node_modules</code> into a container and then attempt to install again, you get
-                a collision between two different structural models. Worse: local installs often include native binary
-                modules compiled for your machine's architecture, which won't run in the container's Linux environment.
-                The rule is simple: <strong>always install dependencies inside the container from a lockfile. Never copy
-                    them in from the host.</strong></p>
-        </div>
+                <!-- Bottom label -->
+                <text
+                  x="541"
+                  y="313"
+                  text-anchor="middle"
+                  font-family="DM Sans,sans-serif"
+                  font-size="11"
+                  fill="#6B7280"
+                >
+                  Only declared packages accessible. Undeclared → error.
+                </text>
+              </svg>
+            </div>
 
-        <h3>Fix 1 — .dockerignore</h3>
+            <!-- Legend -->
+            <div class="diagram-legend">
+              <span class="legend-item">
+                <span
+                  class="legend-dot"
+                  style="background: #ede9fe; border: 1.5px solid #8b5cf6"
+                ></span>
+                your application
+              </span>
+              <span class="legend-item">
+                <span
+                  class="legend-dot"
+                  style="background: #d1fae5; border: 1.5px solid #6ee7b7"
+                ></span>
+                declared dependency
+              </span>
+              <span class="legend-item">
+                <span
+                  class="legend-dot"
+                  style="background: #fef3c7; border: 1.5px solid #f59e0b"
+                ></span>
+                phantom dependency
+              </span>
+              <span class="legend-item">
+                <span
+                  class="legend-dot"
+                  style="background: #fee2e2; border: 1.5px dashed #fca5a5"
+                ></span>
+                isolated in virtual store
+              </span>
+            </div>
 
-        <p>The first step was ensuring Docker never touched our local <code>node_modules</code> in the first place.
-            Without a <code>.dockerignore</code>, Docker's build context includes everything — and that means your local
-            artifacts follow you into the container whether you intended it or not.</p>
+            <p class="diagram-caption">
+              Fig 1. npm hoists everything into a single flat directory — code
+              can silently
+              <code>require()</code> a package it never declared. pnpm's virtual
+              store architecture means only declared dependencies are reachable.
+              If you didn't declare it, you get a hard error — exactly as you
+              should.
+            </p>
+          </div>
+          <!-- /.diagram-wrap -->
 
-        <div class="code-label">.dockerignore</div>
-        <pre><code>node_modules
+          <!-- ── Section: Phantom Dependency ── -->
+          <h2>The First Crack: A Dependency We Never Declared</h2>
+
+          <p>
+            The very first error after switching to pnpm and running the app was
+            this:
+          </p>
+
+          <span class="code-label">runtime error</span>
+          <pre><code>Error: Cannot find module 'json-bigint'</code></pre>
+
+          <p>
+            Confusing at first glance. I could see
+            <code>require('json-bigint')</code> right there in the source. The
+            file existed. The path looked fine. But searching
+            <code>package.json</code> — it wasn't there. Not in
+            <code>dependencies</code>, not in <code>devDependencies</code>. It
+            had simply never been declared.
+          </p>
+
+          <p>
+            With npm, this had worked silently for the entire life of the
+            project. Some other package in our dependency tree depended on
+            <code>json-bigint</code>, and npm hoisted it up to the top-level
+            <code>node_modules</code> so our code could reach for it as if it
+            were installed directly. Classic npm — helpful to a fault.
+          </p>
+
+          <div class="callout callout-warning">
+            <div class="callout-title">
+              <span aria-hidden="true">⚠️</span> Concept — Phantom Dependencies
+            </div>
+            <p>
+              A <strong>phantom dependency</strong> (also called an implicit or
+              ghost dependency) is a package your code uses but doesn't
+              explicitly declare in <code>package.json</code>. With npm's flat
+              hoisting, these can work silently for years. The danger: if the
+              package that actually declared it upstream updates or removes it,
+              your build breaks — with no warning, no clear error message, and
+              no obvious pointer to the root cause. You've been depending on
+              someone else's transitive dependency without knowing it.
+            </p>
+            <p>
+              In our case, <code>json-bigint</code> had been living rent-free in
+              our runtime for months. It would have been undetectable until the
+              parent package dropped it or changed versions — which would have
+              appeared in production as a completely unrelated-looking crash.
+            </p>
+          </div>
+
+          <p>
+            pnpm's strict isolation model doesn't allow this. Each package can
+            only access what it has declared. Our app had been secretly
+            depending on
+            <code>json-bigint</code> through a transitive chain — and pnpm
+            exposed that as the latent defect it was.
+          </p>
+
+          <p>The fix took ten seconds:</p>
+
+          <span class="code-label">terminal</span>
+          <pre><code>pnpm add json-bigint</code></pre>
+
+          <p>
+            But the real value wasn't the fix. It was the signal. Had that
+            transitive dependency ever been removed or version-bumped away
+            upstream, the failure would have landed in production with no direct
+            explanation. pnpm surfaced that risk before it could ever matter.
+          </p>
+
+          <!-- ── Section: Jest 30 ── -->
+          <h2>The Jest 30 Surprise</h2>
+
+          <p>
+            Dependencies clean, time to run the test suite. I ran
+            <code>pnpm test</code>, and Jest 30 — our test runner — threw this
+            immediately:
+          </p>
+
+          <span class="code-label">jest output</span>
+          <pre><code>Module &lt;rootDir&gt;/tests/__config__/jest.setup.js was not found</code></pre>
+
+          <p>
+            The setup file clearly existed. The path in
+            <code>jest.config.js</code> was correct. Nothing had moved.
+            Something deeper was failing and surfacing as a misleading "file not
+            found" error. I spent a frustrating hour checking paths, case
+            sensitivity, symlink resolution — all dead ends.
+          </p>
+
+          <h3>What was actually happening</h3>
+
+          <p>
+            Jest 30 introduced a new file resolution engine called
+            <code>@unrs/resolver</code> — a Rust-based native module that
+            replaces the previous pure-JavaScript resolver. It's faster, but it
+            depends on <strong>platform-specific binary bindings</strong> that
+            need to be present and correctly accessible at runtime.
+          </p>
+
+          <div class="callout callout-concept">
+            <div class="callout-title">
+              <span aria-hidden="true">💡</span> Concept — @unrs/resolver and
+              native bindings
+            </div>
+            <p>
+              <code>@unrs/resolver</code> is Jest 30's new file resolution
+              engine, written in Rust and compiled to a native Node.js addon.
+              Distributed as
+              <strong>optional platform dependencies</strong> (separate packages
+              per OS/architecture), it relies on these binaries being reachable
+              at runtime.
+            </p>
+            <p>
+              Under npm, optional dependencies are installed permissively and
+              fallback behaviour masks failures. Under pnpm's stricter optional
+              dependency handling, if the binary binding isn't found in the
+              expected location, the resolver doesn't gracefully degrade — it
+              fails in a way that surfaces as a completely unrelated-looking
+              "module not found" error. The misleading error message is the
+              worst part: it sends you debugging the wrong thing entirely.
+            </p>
+          </div>
+
+          <p>
+            The pragmatic fix: step back to Jest 29, which uses a
+            pure-JavaScript resolver with no native binary dependencies and no
+            platform-specific complications.
+          </p>
+
+          <span class="code-label">terminal</span>
+          <pre><code>pnpm add -D jest@29</code></pre>
+
+          <p>
+            Jest 29 ran cleanly and reliably. The tradeoff is missing some Jest
+            30 features and performance improvements, but for a production-bound
+            project, "stable and reliable" wins over "newest" without question.
+            We'll revisit Jest 30 compatibility when the pnpm ecosystem fully
+            catches up to it.
+          </p>
+
+          <!-- ── Section: Docker ── -->
+          <h2>Docker: The Container We Were Building Wrong</h2>
+
+          <p>
+            Tests passing, dependencies clean. Time to build the Docker image.
+            The build failed on the first attempt:
+          </p>
+
+          <span class="code-label">docker build error</span>
+          <pre><code>cannot copy to non-directory: node_modules/...</code></pre>
+
+          <h3>The root cause</h3>
+
+          <p>
+            Our Dockerfile used a common but problematic pattern:
+            <code>COPY . .</code>
+            to copy the entire project directory into the container — including
+            <code>node_modules</code>. Our local <code>node_modules</code> had
+            been installed by npm and had a flat structure. But pnpm uses a
+            symlink-based structure in <code>.pnpm/</code>. When Docker tried to
+            copy an npm-style <code>node_modules</code> into a container where
+            pnpm was attempting to install its own version, the two structures
+            conflicted in a way Docker couldn't resolve.
+          </p>
+
+          <div class="callout callout-concept">
+            <div class="callout-title">
+              <span aria-hidden="true">💡</span> Concept — Why you should never
+              copy node_modules into Docker
+            </div>
+            <p>
+              Every package manager structures
+              <code>node_modules</code> differently — npm uses flat hoisting,
+              yarn uses hoisting with workspaces, pnpm uses a symlinked virtual
+              store. When you <code>COPY</code> a locally-installed
+              <code>node_modules</code> into a container and then attempt to
+              install again, you get a collision between two different
+              structural models.
+            </p>
+            <p>
+              Worse: local installs often include native binary modules compiled
+              for your machine's architecture (x64 macOS, for example) which
+              will not run in the container's Linux/amd64 environment. The rule
+              is simple:
+              <strong
+                >always install dependencies inside the container from a
+                lockfile. Never copy them in from the host.</strong
+              >
+            </p>
+          </div>
+
+          <h3>Fix 1 — .dockerignore</h3>
+
+          <p>
+            The first step was ensuring Docker never touched our local
+            <code>node_modules</code> in the first place. Without a
+            <code>.dockerignore</code>, Docker's build context includes
+            everything — and that means your local artefacts follow you into the
+            container whether you intended it or not.
+          </p>
+
+          <span class="code-label">.dockerignore</span>
+          <pre><code>node_modules
 .pnpm-store
 .git
 .gitignore
@@ -596,41 +1187,69 @@ tests
 coverage
 .env*</code></pre>
 
-        <h3>Fix 2 — Rewriting the Dockerfile</h3>
+          <h3>Fix 2 — Rewriting the Dockerfile</h3>
 
-        <p>The bigger change was restructuring the Dockerfile properly around pnpm. Several deliberate decisions went
-            into the final version:</p>
+          <p>
+            The bigger change was restructuring the Dockerfile properly around
+            pnpm. Several deliberate decisions went into the final version:
+          </p>
 
-        <ul>
-            <li><strong>Debian over Alpine.</strong> Alpine Linux uses musl libc instead of glibc, which causes
-                compatibility issues with native Node.js modules. <code>node:24-slim</code> is Debian-based and
-                sidesteps this entirely.</li>
-            <li><strong>Corepack for pnpm activation.</strong> Rather than installing pnpm via npm — which is
-                conceptually backwards — we enable it through Node's built-in <code>corepack</code>, the official way to
-                manage package manager versions in Node 16+.</li>
-            <li><strong>Frozen lockfile installs.</strong> The <code>--frozen-lockfile</code> flag ensures the container
-                always installs exactly what's in <code>pnpm-lock.yaml</code>. No drift, no surprises.</li>
-            <li><strong>Multi-stage build.</strong> The builder stage handles installation; a distroless runtime stage
-                produces a lean, secure final image with no build tooling included.</li>
-        </ul>
+          <ul>
+            <li>
+              <strong>Debian over Alpine.</strong> Alpine Linux uses musl libc
+              instead of glibc, which causes compatibility issues with native
+              Node.js modules. <code>node:24-slim</code> is Debian-based and
+              sidesteps this entirely.
+            </li>
+            <li>
+              <strong>Corepack for pnpm activation.</strong> Rather than
+              installing pnpm via npm — which is conceptually backwards — we
+              enable it through Node's built-in <code>corepack</code>, the
+              official way to manage package manager versions in Node 16+.
+            </li>
+            <li>
+              <strong>Frozen lockfile installs.</strong> The
+              <code>--frozen-lockfile</code>
+              flag ensures the container always installs exactly what's in
+              <code>pnpm-lock.yaml</code>. No drift, no surprises.
+            </li>
+            <li>
+              <strong>Multi-stage build.</strong> The builder stage handles
+              installation; a distroless runtime stage produces a lean, secure
+              final image with no build tooling included.
+            </li>
+          </ul>
 
-        <div class="code-label">Dockerfile</div>
-        <pre><code># ---- Stage 1: Builder ----
+          <span class="code-label">Dockerfile</span>
+          <pre><code># ── Stage 1: Builder ──────────────────────────────────────────
+# Uses Debian slim (glibc-compatible) to avoid Alpine/musl issues
+# with native Node.js addons.
 FROM node:24-slim AS builder
 
+# corepack is Node's built-in tool for managing package managers.
+# This activates it so we can use pnpm without installing via npm.
 RUN corepack enable
 
 WORKDIR /usr/src/app
 
+# Copy manifests first — Docker layer-caches these separately.
+# If only source files change (not deps), the pnpm install layer
+# is served from cache, making rebuilds significantly faster.
 COPY package.json pnpm-lock.yaml ./
 
+# --prod          : skip devDependencies (Jest, ESLint, etc.)
+# --frozen-lockfile: fail if pnpm-lock.yaml doesn't match package.json
 RUN pnpm install --prod --frozen-lockfile \
  && pnpm rebuild \
  && pnpm approve-builds
 
+# Copy source after dependency install — keeps the cache layer clean
 COPY . .
 
-# ---- Stage 2: Runtime ----
+
+# ── Stage 2: Runtime ──────────────────────────────────────────
+# Distroless image: no shell, no package manager, minimal attack
+# surface. Only the runtime and our application code is present.
 FROM gcr.io/distroless/nodejs24-debian12
 
 WORKDIR /usr/src/app
@@ -641,215 +1260,884 @@ COPY --from=builder /usr/src/app /usr/src/app
 EXPOSE 8080
 CMD ["bin/server.js"]</code></pre>
 
-        <h3>The pnpm approve-builds gotcha</h3>
+          <h3>The pnpm approve-builds gotcha</h3>
 
-        <div class="callout callout-warning">
-            <div class="callout-title">⚠️ Watch out — pnpm approve-builds in CI / Docker</div>
-            <p>pnpm blocks native build scripts by default as a security measure. Packages like <code>deasync</code>
-                require a compile step, and pnpm won't run those scripts without explicit approval. Running
-                <code>pnpm approve-builds</code> <em>locally</em> is interactive — it prompts you to review and confirm.
-                In Docker or CI, it's non-interactive — <strong>the approvals must already exist in your project's
-                    configuration before the build runs.</strong> If you rely on this command in a Dockerfile without
-                having committed the approval config to your repo first, the build will hang or fail silently. Commit
-                your approvals to the repo; don't assume the interactive flow will work in automation.</p>
-        </div>
+          <div class="callout callout-warning">
+            <div class="callout-title">
+              <span aria-hidden="true">⚠️</span> Watch out — pnpm approve-builds
+              in CI / Docker
+            </div>
+            <p>
+              pnpm blocks native build scripts by default as a security measure.
+              Packages like <code>deasync</code> require a compile step, and
+              pnpm won't run those scripts without explicit approval.
+            </p>
+            <p>
+              Running <code>pnpm approve-builds</code> <em>locally</em> is
+              interactive — it prompts you to review and confirm each package.
+              In Docker or CI, it's non-interactive —
+              <strong
+                >the approvals must already exist in your project's
+                configuration before the build runs.</strong
+              >
+              If you rely on this command in a Dockerfile without having
+              committed the approval config to your repo first, the build will
+              hang or fail silently.
+            </p>
+            <p>
+              Commit your approvals to the repo. Don't assume the interactive
+              flow will work in automation — it won't.
+            </p>
+          </div>
 
+          <!-- ── Section: Full Migration Journey ── -->
+          <h2>The Full Migration Journey</h2>
 
-        <h2>The Full Migration Journey</h2>
+          <p>
+            Looking back, the path from npm to a stable pnpm setup wasn't a
+            single leap — it was a sequence of surfaced issues, each one
+            representing a real problem that had existed in the codebase before
+            pnpm ever touched it. The tool didn't create these problems; it
+            revealed them.
+          </p>
 
-        <p>Looking back, the path from npm to a stable pnpm setup wasn't a single leap — it was a sequence of surfaced
-            issues, each one representing a real problem that had existed in the codebase before pnpm ever touched it.
-            The tool didn't create these problems; it revealed them.</p>
+          <!-- ───────────────────────────────────────────────────────
+             DIAGRAM 2: Migration journey flowchart
+             Vertical spine with 4 checkpoints. Each failure node
+             has a horizontal "fix" branch showing the resolution.
+             viewBox: 680 × 640
+             ─────────────────────────────────────────────────────── -->
+          <div class="diagram-wrap">
+            <div class="diagram-scroll">
+              <svg
+                width="100%"
+                viewBox="0 0 680 662"
+                xmlns="http://www.w3.org/2000/svg"
+                role="img"
+                aria-labelledby="diag2-title diag2-desc"
+              >
+                <title id="diag2-title">
+                  Migration journey from npm to stable pnpm production build
+                </title>
+                <desc id="diag2-desc">
+                  A flowchart showing the sequential steps of the migration.
+                  Starting from the existing npm codebase, through installing
+                  pnpm, encountering and resolving three problems (phantom
+                  dependency, Jest 30 failure, Docker build conflict), and
+                  arriving at a stable production build.
+                </desc>
 
-        <div class="diagram-wrap">
-            <svg width="100%" viewBox="0 0 680 656" role="img">
-                <title>Full migration journey from npm to stable pnpm build</title>
-                <desc>Flowchart showing sequential migration steps with three problem/fix pairs: phantom dependency,
-                    Jest 30 failure, and Docker build failure, all resolved to reach a stable production build.</desc>
+                <!-- Arrow markers -->
                 <defs>
-                    <marker id="ma" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6"
-                        orient="auto-start-reverse">
-                        <path d="M2 1L8 5L2 9" fill="none" stroke="#C4C0B8" stroke-width="1.5" stroke-linecap="round"
-                            stroke-linejoin="round" />
-                    </marker>
-                    <marker id="mt" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6"
-                        orient="auto-start-reverse">
-                        <path d="M2 1L8 5L2 9" fill="none" stroke="#1D9E75" stroke-width="1.5" stroke-linecap="round"
-                            stroke-linejoin="round" />
-                    </marker>
+                  <marker
+                    id="j-gray"
+                    viewBox="0 0 10 10"
+                    refX="9"
+                    refY="5"
+                    markerWidth="5"
+                    markerHeight="5"
+                    orient="auto-start-reverse"
+                  >
+                    <path
+                      d="M1.5 1.5L8.5 5L1.5 8.5"
+                      fill="none"
+                      stroke="#C4C0B8"
+                      stroke-width="2"
+                      stroke-linecap="round"
+                    />
+                  </marker>
+                  <marker
+                    id="j-green"
+                    viewBox="0 0 10 10"
+                    refX="9"
+                    refY="5"
+                    markerWidth="5"
+                    markerHeight="5"
+                    orient="auto-start-reverse"
+                  >
+                    <path
+                      d="M1.5 1.5L8.5 5L1.5 8.5"
+                      fill="none"
+                      stroke="#16A34A"
+                      stroke-width="2"
+                      stroke-linecap="round"
+                    />
+                  </marker>
+                  <marker
+                    id="j-fix"
+                    viewBox="0 0 10 10"
+                    refX="9"
+                    refY="5"
+                    markerWidth="5"
+                    markerHeight="5"
+                    orient="auto-start-reverse"
+                  >
+                    <path
+                      d="M1.5 1.5L8.5 5L1.5 8.5"
+                      fill="none"
+                      stroke="#0891B2"
+                      stroke-width="2"
+                      stroke-linecap="round"
+                    />
+                  </marker>
                 </defs>
 
-                <!-- Column labels -->
-                <text x="298" y="20" text-anchor="middle" font-family="DM Sans,sans-serif" font-size="10.5"
-                    font-weight="500" fill="#C4C0B8" letter-spacing="0.06em">MIGRATION STEPS</text>
-                <text x="563" y="20" text-anchor="middle" font-family="DM Sans,sans-serif" font-size="10.5"
-                    font-weight="500" fill="#C4C0B8" letter-spacing="0.06em">FIX APPLIED</text>
-                <line x1="563" y1="28" x2="563" y2="540" stroke="#F0EEE8" stroke-width="1" stroke-dasharray="2 3" />
+                <!-- ── COLUMN HEADERS ── -->
+                <text
+                  x="216"
+                  y="18"
+                  text-anchor="middle"
+                  font-family="DM Sans,sans-serif"
+                  font-size="10"
+                  font-weight="600"
+                  fill="#C4C0B8"
+                  letter-spacing="0.08em"
+                >
+                  MIGRATION FLOW
+                </text>
+                <text
+                  x="520"
+                  y="18"
+                  text-anchor="middle"
+                  font-family="DM Sans,sans-serif"
+                  font-size="10"
+                  font-weight="600"
+                  fill="#C4C0B8"
+                  letter-spacing="0.08em"
+                >
+                  FIX APPLIED
+                </text>
 
-                <!-- BOX 1: npm codebase -->
-                <rect x="178" y="32" width="240" height="44" rx="8" fill="#F5F5F4" stroke="#D6D3D1" stroke-width="1" />
-                <text x="298" y="54" text-anchor="middle" dominant-baseline="central" font-family="DM Sans,sans-serif"
-                    font-size="14" font-weight="500" fill="#57534E">npm codebase</text>
-                <line x1="298" y1="76" x2="298" y2="106" stroke="#D6D3D1" stroke-width="1.5" marker-end="url(#ma)" />
+                <!-- Column separator -->
+                <line
+                  x1="370"
+                  y1="26"
+                  x2="370"
+                  y2="580"
+                  stroke="#F0EEE8"
+                  stroke-width="1"
+                  stroke-dasharray="2 4"
+                />
 
-                <!-- BOX 2: switch to pnpm -->
-                <rect x="178" y="108" width="240" height="44" rx="8" fill="#EFF6FF" stroke="#BFDBFE" stroke-width="1" />
-                <text x="298" y="130" text-anchor="middle" dominant-baseline="central" font-family="DM Sans,sans-serif"
-                    font-size="14" font-weight="500" fill="#1D4ED8">switch to pnpm</text>
-                <line x1="298" y1="152" x2="298" y2="182" stroke="#D6D3D1" stroke-width="1.5" marker-end="url(#ma)" />
+                <!-- ────────────────────────────────────────
+                   NODE 1: npm codebase (starting state)
+                   ──────────────────────────────────────── -->
+                <rect
+                  x="116"
+                  y="30"
+                  width="200"
+                  height="48"
+                  rx="9"
+                  fill="#F5F5F4"
+                  stroke="#D6D3D1"
+                  stroke-width="1.2"
+                />
+                <text
+                  x="216"
+                  y="50"
+                  text-anchor="middle"
+                  dominant-baseline="central"
+                  font-family="DM Sans,sans-serif"
+                  font-size="14"
+                  font-weight="500"
+                  fill="#57534E"
+                >
+                  npm codebase
+                </text>
+                <text
+                  x="216"
+                  y="67"
+                  text-anchor="middle"
+                  dominant-baseline="central"
+                  font-family="DM Sans,sans-serif"
+                  font-size="10.5"
+                  fill="#A8A29E"
+                >
+                  existing project, flat node_modules
+                </text>
 
-                <!-- BOX 3: pnpm install -->
-                <rect x="178" y="184" width="240" height="44" rx="8" fill="#EFF6FF" stroke="#BFDBFE" stroke-width="1" />
-                <text x="298" y="206" text-anchor="middle" dominant-baseline="central"
-                    font-family="JetBrains Mono,monospace" font-size="13" fill="#1D4ED8">pnpm install</text>
-                <line x1="298" y1="228" x2="298" y2="258" stroke="#D6D3D1" stroke-width="1.5" marker-end="url(#ma)" />
+                <!-- Arrow: node 1 → node 2 -->
+                <line
+                  x1="216"
+                  y1="78"
+                  x2="216"
+                  y2="108"
+                  stroke="#D6D3D1"
+                  stroke-width="2"
+                  marker-end="url(#j-gray)"
+                />
 
-                <!-- BOX 4: phantom dep error (red) -->
-                <rect x="178" y="260" width="240" height="56" rx="8" fill="#FFF1F2" stroke="#FECDD3" stroke-width="1" />
-                <text x="298" y="280" text-anchor="middle" dominant-baseline="central" font-family="DM Sans,sans-serif"
-                    font-size="14" font-weight="500" fill="#9F1239">phantom dep error</text>
-                <text x="298" y="298" text-anchor="middle" dominant-baseline="central"
-                    font-family="JetBrains Mono,monospace" font-size="10.5" fill="#BE123C">json-bigint not
-                    declared</text>
-                <!-- Fix connector 4 -->
-                <line x1="418" y1="288" x2="455" y2="288" stroke="#1D9E75" stroke-width="1.5" stroke-dasharray="3 2"
-                    marker-end="url(#mt)" />
-                <!-- Fix box 4 -->
-                <rect x="457" y="260" width="210" height="56" rx="8" fill="#E1F5EE" stroke="#9FE1CB" stroke-width="1" />
-                <text x="562" y="280" text-anchor="middle" dominant-baseline="central" font-family="DM Sans,sans-serif"
-                    font-size="13" font-weight="500" fill="#085041">declare dependency</text>
-                <text x="562" y="298" text-anchor="middle" dominant-baseline="central"
-                    font-family="JetBrains Mono,monospace" font-size="10" fill="#0F6E56">pnpm add json-bigint</text>
+                <!-- ────────────────────────────────────────
+                   NODE 2: switch to pnpm
+                   ──────────────────────────────────────── -->
+                <rect
+                  x="116"
+                  y="110"
+                  width="200"
+                  height="48"
+                  rx="9"
+                  fill="#EFF6FF"
+                  stroke="#BFDBFE"
+                  stroke-width="1.2"
+                />
+                <text
+                  x="216"
+                  y="130"
+                  text-anchor="middle"
+                  dominant-baseline="central"
+                  font-family="DM Sans,sans-serif"
+                  font-size="14"
+                  font-weight="500"
+                  fill="#1D4ED8"
+                >
+                  switch to pnpm
+                </text>
+                <text
+                  x="216"
+                  y="147"
+                  text-anchor="middle"
+                  dominant-baseline="central"
+                  font-family="JetBrains Mono,monospace"
+                  font-size="10.5"
+                  fill="#3B82F6"
+                >
+                  delete node_modules · generate lockfile
+                </text>
 
-                <line x1="298" y1="316" x2="298" y2="356" stroke="#D6D3D1" stroke-width="1.5" marker-end="url(#ma)" />
+                <!-- Arrow: node 2 → node 3 -->
+                <line
+                  x1="216"
+                  y1="158"
+                  x2="216"
+                  y2="188"
+                  stroke="#D6D3D1"
+                  stroke-width="2"
+                  marker-end="url(#j-gray)"
+                />
 
-                <!-- BOX 5: Jest 30 fails (red) -->
-                <rect x="178" y="358" width="240" height="56" rx="8" fill="#FFF1F2" stroke="#FECDD3" stroke-width="1" />
-                <text x="298" y="378" text-anchor="middle" dominant-baseline="central" font-family="DM Sans,sans-serif"
-                    font-size="14" font-weight="500" fill="#9F1239">Jest 30 fails</text>
-                <text x="298" y="396" text-anchor="middle" dominant-baseline="central"
-                    font-family="JetBrains Mono,monospace" font-size="10.5" fill="#BE123C">resolver binding issue</text>
-                <!-- Fix connector 5 -->
-                <line x1="418" y1="386" x2="455" y2="386" stroke="#1D9E75" stroke-width="1.5" stroke-dasharray="3 2"
-                    marker-end="url(#mt)" />
-                <!-- Fix box 5 -->
-                <rect x="457" y="358" width="210" height="56" rx="8" fill="#E1F5EE" stroke="#9FE1CB" stroke-width="1" />
-                <text x="562" y="378" text-anchor="middle" dominant-baseline="central" font-family="DM Sans,sans-serif"
-                    font-size="13" font-weight="500" fill="#085041">downgrade jest</text>
-                <text x="562" y="396" text-anchor="middle" dominant-baseline="central"
-                    font-family="JetBrains Mono,monospace" font-size="10" fill="#0F6E56">pnpm add -D jest@29</text>
+                <!-- ────────────────────────────────────────
+                   NODE 3: pnpm install
+                   ──────────────────────────────────────── -->
+                <rect
+                  x="116"
+                  y="190"
+                  width="200"
+                  height="48"
+                  rx="9"
+                  fill="#EFF6FF"
+                  stroke="#BFDBFE"
+                  stroke-width="1.2"
+                />
+                <text
+                  x="216"
+                  y="210"
+                  text-anchor="middle"
+                  dominant-baseline="central"
+                  font-family="JetBrains Mono,monospace"
+                  font-size="14"
+                  fill="#1D4ED8"
+                >
+                  pnpm install
+                </text>
+                <text
+                  x="216"
+                  y="227"
+                  text-anchor="middle"
+                  dominant-baseline="central"
+                  font-family="DM Sans,sans-serif"
+                  font-size="10.5"
+                  fill="#3B82F6"
+                >
+                  first run with strict isolation
+                </text>
 
-                <line x1="298" y1="414" x2="298" y2="454" stroke="#D6D3D1" stroke-width="1.5" marker-end="url(#ma)" />
+                <!-- Arrow: node 3 → problem 1 -->
+                <line
+                  x1="216"
+                  y1="238"
+                  x2="216"
+                  y2="268"
+                  stroke="#D6D3D1"
+                  stroke-width="2"
+                  marker-end="url(#j-gray)"
+                />
 
-                <!-- BOX 6: Docker build fails (red) -->
-                <rect x="178" y="456" width="240" height="56" rx="8" fill="#FFF1F2" stroke="#FECDD3" stroke-width="1" />
-                <text x="298" y="476" text-anchor="middle" dominant-baseline="central" font-family="DM Sans,sans-serif"
-                    font-size="14" font-weight="500" fill="#9F1239">Docker build fails</text>
-                <text x="298" y="494" text-anchor="middle" dominant-baseline="central"
-                    font-family="JetBrains Mono,monospace" font-size="10.5" fill="#BE123C">node_modules conflict</text>
-                <!-- Fix connector 6 -->
-                <line x1="418" y1="484" x2="455" y2="484" stroke="#1D9E75" stroke-width="1.5" stroke-dasharray="3 2"
-                    marker-end="url(#mt)" />
-                <!-- Fix box 6 -->
-                <rect x="457" y="456" width="210" height="56" rx="8" fill="#E1F5EE" stroke="#9FE1CB" stroke-width="1" />
-                <text x="562" y="476" text-anchor="middle" dominant-baseline="central" font-family="DM Sans,sans-serif"
-                    font-size="13" font-weight="500" fill="#085041">fix docker config</text>
-                <text x="562" y="494" text-anchor="middle" dominant-baseline="central"
-                    font-family="JetBrains Mono,monospace" font-size="10" fill="#0F6E56">dockerignore +
-                    Dockerfile</text>
+                <!-- ────────────────────────────────────────
+                   PROBLEM 1: Phantom dependency
+                   ──────────────────────────────────────── -->
 
-                <line x1="298" y1="512" x2="298" y2="552" stroke="#D6D3D1" stroke-width="1.5" marker-end="url(#ma)" />
+                <!-- Step marker -->
+                <circle
+                  cx="216"
+                  cy="298"
+                  r="16"
+                  fill="#FFF1F2"
+                  stroke="#FECDD3"
+                  stroke-width="1.5"
+                />
+                <text
+                  x="216"
+                  y="298"
+                  text-anchor="middle"
+                  dominant-baseline="central"
+                  font-family="DM Sans,sans-serif"
+                  font-size="11"
+                  font-weight="700"
+                  fill="#E11D48"
+                >
+                  1
+                </text>
 
-                <!-- BOX 7: Stable build (green) -->
-                <rect x="178" y="554" width="240" height="56" rx="8" fill="#F0FDF4" stroke="#86EFAC" stroke-width="2" />
-                <text x="298" y="574" text-anchor="middle" dominant-baseline="central" font-family="DM Sans,sans-serif"
-                    font-size="14" font-weight="500" fill="#15803D">stable production build</text>
-                <text x="298" y="592" text-anchor="middle" dominant-baseline="central" font-family="DM Sans,sans-serif"
-                    font-size="11" fill="#22C55E">deterministic · explicit · reproducible</text>
-            </svg>
-            <p class="diagram-caption">Fig 2. Each red node was a real issue already lurking in the codebase — pnpm
-                surfaced them. The teal fixes resolved each one. Nothing was invented by the migration; everything was
-                uncovered by it.</p>
-        </div>
+                <rect
+                  x="72"
+                  y="316"
+                  width="288"
+                  height="56"
+                  rx="9"
+                  fill="#FFF1F2"
+                  stroke="#FECDD3"
+                  stroke-width="1.2"
+                />
+                <text
+                  x="216"
+                  y="337"
+                  text-anchor="middle"
+                  dominant-baseline="central"
+                  font-family="DM Sans,sans-serif"
+                  font-size="14"
+                  font-weight="500"
+                  fill="#9F1239"
+                >
+                  phantom dependency error
+                </text>
+                <text
+                  x="216"
+                  y="355"
+                  text-anchor="middle"
+                  dominant-baseline="central"
+                  font-family="JetBrains Mono,monospace"
+                  font-size="10.5"
+                  fill="#BE123C"
+                >
+                  Cannot find module 'json-bigint'
+                </text>
 
+                <!-- Horizontal fix connector 1 -->
+                <line
+                  x1="360"
+                  y1="344"
+                  x2="388"
+                  y2="344"
+                  stroke="#0891B2"
+                  stroke-width="1.5"
+                  stroke-dasharray="4 2"
+                  marker-end="url(#j-fix)"
+                />
 
-        <h2>What We Learned</h2>
+                <!-- Fix box 1 -->
+                <rect
+                  x="390"
+                  y="316"
+                  width="258"
+                  height="56"
+                  rx="9"
+                  fill="#ECFEFF"
+                  stroke="#A5F3FC"
+                  stroke-width="1.2"
+                />
+                <text
+                  x="519"
+                  y="335"
+                  text-anchor="middle"
+                  dominant-baseline="central"
+                  font-family="DM Sans,sans-serif"
+                  font-size="13"
+                  font-weight="500"
+                  fill="#0E7490"
+                >
+                  declare the dependency
+                </text>
+                <text
+                  x="519"
+                  y="352"
+                  text-anchor="middle"
+                  dominant-baseline="central"
+                  font-family="JetBrains Mono,monospace"
+                  font-size="10.5"
+                  fill="#0891B2"
+                >
+                  pnpm add json-bigint
+                </text>
+                <!-- Fix indicator -->
+                <text
+                  x="645"
+                  y="337"
+                  font-family="DM Sans,sans-serif"
+                  font-size="13"
+                  fill="#0E7490"
+                  text-anchor="middle"
+                  dominant-baseline="central"
+                >
+                  ✓
+                </text>
 
-        <h3>1. pnpm failures are signals, not blockers</h3>
-        <p>Every time pnpm refused to work, it was telling us something true about our project. The
-            <code>json-bigint</code> error wasn't a pnpm bug — it was pnpm correctly enforcing a standard that npm had
-            been quietly violating on our behalf. Treat pnpm install failures the way you'd treat a compiler error: not
-            as obstacles to work around, but as information to act on.</p>
+                <!-- Arrow: problem 1 → problem 2 -->
+                <line
+                  x1="216"
+                  y1="372"
+                  x2="216"
+                  y2="412"
+                  stroke="#D6D3D1"
+                  stroke-width="2"
+                  marker-end="url(#j-gray)"
+                />
 
-        <h3>2. Your Docker build should be hermetic</h3>
-        <p>A Docker image that behaves differently from your local environment isn't a reliable Docker image. The
-            <code>COPY . .</code> shortcut is convenient, but the moment it drags <code>node_modules</code> along,
-            you've lost reproducibility. Every container build should install from the lockfile, inside the container,
-            with nothing carried over from the host machine.</p>
+                <!-- ────────────────────────────────────────
+                   PROBLEM 2: Jest 30 resolver
+                   ──────────────────────────────────────── -->
 
-        <h3>3. Tooling stability beats tooling currency</h3>
-        <p>Jest 30 is newer and faster. Jest 29 works reliably with pnpm today. In production systems, "works reliably"
-            wins over "latest version" — consistently. We'll upgrade when the ecosystem matures around it. We're not
-            going to trade test reliability for a resolver we can't trust yet.</p>
+                <circle
+                  cx="216"
+                  cy="430"
+                  r="16"
+                  fill="#FFF1F2"
+                  stroke="#FECDD3"
+                  stroke-width="1.5"
+                />
+                <text
+                  x="216"
+                  y="430"
+                  text-anchor="middle"
+                  dominant-baseline="central"
+                  font-family="DM Sans,sans-serif"
+                  font-size="11"
+                  font-weight="700"
+                  fill="#E11D48"
+                >
+                  2
+                </text>
 
-        <h3>4. Run <code>pnpm audit</code> as part of your migration</h3>
-        <p>Beyond surfacing phantom dependencies, pnpm's stricter dependency graph produces a more accurate security
-            audit. npm's flat hoisting can introduce false positives from hoisted packages that aren't actually your
-            problem. pnpm ties vulnerabilities to actual declared usage. Run <code>pnpm audit</code> and
-            <code>pnpm outdated</code> after any major migration — you may find surprises.</p>
+                <rect
+                  x="72"
+                  y="448"
+                  width="288"
+                  height="56"
+                  rx="9"
+                  fill="#FFF1F2"
+                  stroke="#FECDD3"
+                  stroke-width="1.2"
+                />
+                <text
+                  x="216"
+                  y="469"
+                  text-anchor="middle"
+                  dominant-baseline="central"
+                  font-family="DM Sans,sans-serif"
+                  font-size="14"
+                  font-weight="500"
+                  fill="#9F1239"
+                >
+                  Jest 30 tests fail
+                </text>
+                <text
+                  x="216"
+                  y="487"
+                  text-anchor="middle"
+                  dominant-baseline="central"
+                  font-family="JetBrains Mono,monospace"
+                  font-size="10.5"
+                  fill="#BE123C"
+                >
+                  @unrs/resolver native binding issue
+                </text>
 
+                <!-- Horizontal fix connector 2 -->
+                <line
+                  x1="360"
+                  y1="476"
+                  x2="388"
+                  y2="476"
+                  stroke="#0891B2"
+                  stroke-width="1.5"
+                  stroke-dasharray="4 2"
+                  marker-end="url(#j-fix)"
+                />
 
-        <hr>
-        <h2>TL;DR</h2>
+                <!-- Fix box 2 -->
+                <rect
+                  x="390"
+                  y="448"
+                  width="258"
+                  height="56"
+                  rx="9"
+                  fill="#ECFEFF"
+                  stroke="#A5F3FC"
+                  stroke-width="1.2"
+                />
+                <text
+                  x="519"
+                  y="467"
+                  text-anchor="middle"
+                  dominant-baseline="central"
+                  font-family="DM Sans,sans-serif"
+                  font-size="13"
+                  font-weight="500"
+                  fill="#0E7490"
+                >
+                  downgrade to Jest 29
+                </text>
+                <text
+                  x="519"
+                  y="485"
+                  text-anchor="middle"
+                  dominant-baseline="central"
+                  font-family="JetBrains Mono,monospace"
+                  font-size="10.5"
+                  fill="#0891B2"
+                >
+                  pnpm add -D jest@29
+                </text>
 
-        <table>
-            <thead>
+                <!-- Arrow: problem 2 → problem 3 -->
+                <line
+                  x1="216"
+                  y1="504"
+                  x2="216"
+                  y2="544"
+                  stroke="#D6D3D1"
+                  stroke-width="2"
+                  marker-end="url(#j-gray)"
+                />
+
+                <!-- ────────────────────────────────────────
+                   PROBLEM 3: Docker build
+                   ──────────────────────────────────────── -->
+
+                <circle
+                  cx="216"
+                  cy="562"
+                  r="16"
+                  fill="#FFF1F2"
+                  stroke="#FECDD3"
+                  stroke-width="1.5"
+                />
+                <text
+                  x="216"
+                  y="562"
+                  text-anchor="middle"
+                  dominant-baseline="central"
+                  font-family="DM Sans,sans-serif"
+                  font-size="11"
+                  font-weight="700"
+                  fill="#E11D48"
+                >
+                  3
+                </text>
+
+                <rect
+                  x="72"
+                  y="580"
+                  width="288"
+                  height="56"
+                  rx="9"
+                  fill="#FFF1F2"
+                  stroke="#FECDD3"
+                  stroke-width="1.2"
+                />
+                <text
+                  x="216"
+                  y="601"
+                  text-anchor="middle"
+                  dominant-baseline="central"
+                  font-family="DM Sans,sans-serif"
+                  font-size="14"
+                  font-weight="500"
+                  fill="#9F1239"
+                >
+                  Docker build fails
+                </text>
+                <text
+                  x="216"
+                  y="619"
+                  text-anchor="middle"
+                  dominant-baseline="central"
+                  font-family="JetBrains Mono,monospace"
+                  font-size="10.5"
+                  fill="#BE123C"
+                >
+                  node_modules structure conflict
+                </text>
+
+                <!-- Horizontal fix connector 3 -->
+                <line
+                  x1="360"
+                  y1="608"
+                  x2="388"
+                  y2="608"
+                  stroke="#0891B2"
+                  stroke-width="1.5"
+                  stroke-dasharray="4 2"
+                  marker-end="url(#j-fix)"
+                />
+
+                <!-- Fix box 3 -->
+                <rect
+                  x="390"
+                  y="580"
+                  width="258"
+                  height="56"
+                  rx="9"
+                  fill="#ECFEFF"
+                  stroke="#A5F3FC"
+                  stroke-width="1.2"
+                />
+                <text
+                  x="519"
+                  y="599"
+                  text-anchor="middle"
+                  dominant-baseline="central"
+                  font-family="DM Sans,sans-serif"
+                  font-size="13"
+                  font-weight="500"
+                  fill="#0E7490"
+                >
+                  fix Docker config
+                </text>
+                <text
+                  x="519"
+                  y="617"
+                  text-anchor="middle"
+                  dominant-baseline="central"
+                  font-family="JetBrains Mono,monospace"
+                  font-size="10"
+                  fill="#0891B2"
+                >
+                  .dockerignore + lockfile install
+                </text>
+
+                <!-- Arrow: problem 3 → success -->
+                <line
+                  x1="216"
+                  y1="636"
+                  x2="216"
+                  y2="642"
+                  stroke="#16A34A"
+                  stroke-width="2"
+                  marker-end="url(#j-green)"
+                />
+              </svg>
+            </div>
+
+            <!-- Final success state below the SVG (easier to handle at
+               the bottom without cramping the SVG canvas) -->
+            <div
+              style="
+                background: #f0fdf4;
+                border: 2px solid #86efac;
+                border-radius: 10px;
+                padding: 14px 20px;
+                text-align: center;
+                margin-top: 8px;
+              "
+            >
+              <span
+                style="
+                  font-family: &quot;DM Sans&quot;, sans-serif;
+                  font-size: 15px;
+                  font-weight: 600;
+                  color: #15803d;
+                "
+                >✓ Stable production build</span
+              >
+              <span
+                style="
+                  display: block;
+                  font-family: &quot;DM Sans&quot;, sans-serif;
+                  font-size: 12px;
+                  color: #22c55e;
+                  margin-top: 3px;
+                  letter-spacing: 0.04em;
+                "
+                >deterministic · explicit · reproducible · containerised</span
+              >
+            </div>
+
+            <p class="diagram-caption">
+              Fig 2. Each numbered problem was already present in the codebase
+              before pnpm. The migration didn't introduce defects — it surfaced
+              them. The dashed cyan arrows show the fix applied at each stage;
+              the final green state is the goal.
+            </p>
+          </div>
+          <!-- /.diagram-wrap -->
+
+          <!-- ── Section: What We Learned ── -->
+          <h2>What I Learned</h2>
+
+          <h3>1. pnpm failures are signals, not blockers</h3>
+          <p>
+            Every time pnpm refused to work, it was telling us something true
+            about the project. The <code>json-bigint</code> error wasn't a pnpm
+            bug — it was pnpm correctly enforcing a standard that npm had been
+            quietly violating on our behalf. I had to consciously resist the
+            urge to "just make it work" and instead treat each failure as a code
+            review comment from the tooling itself.
+          </p>
+
+          <h3>2. Your Docker build should be hermetic</h3>
+          <p>
+            A Docker image that behaves differently from your local environment
+            isn't a reliable Docker image. The <code>COPY . .</code> shortcut is
+            convenient, but the moment it drags <code>node_modules</code> along,
+            you've lost reproducibility. Every container build should install
+            from the lockfile, inside the container, with nothing carried over
+            from the host machine. We should have had this right from the
+            beginning — pnpm just forced us to confront it.
+          </p>
+
+          <h3>3. Tooling stability beats tooling currency</h3>
+          <p>
+            Jest 30 is newer and faster. Jest 29 works reliably with pnpm today.
+            In production systems, "works reliably" wins over "latest version" —
+            consistently. We'll upgrade when the ecosystem matures around it.
+            We're not going to trade test reliability for a resolver we can't
+            trust yet.
+          </p>
+
+          <h3>4. Run <code>pnpm audit</code> as part of your migration</h3>
+          <p>
+            Beyond surfacing phantom dependencies, pnpm's stricter dependency
+            graph produces a more accurate security audit. npm's flat hoisting
+            can introduce false positives from hoisted packages that aren't
+            actually your problem. pnpm ties vulnerabilities to actual declared
+            usage. Run
+            <code>pnpm audit</code> and <code>pnpm outdated</code> after any
+            major migration — you may find surprises.
+          </p>
+
+          <h3>5. Migration is a good forcing function</h3>
+          <p>
+            The project had accumulated technical debt in the form of undeclared
+            dependencies, a Docker configuration that had never been properly
+            reviewed, and a test runner version we'd adopted without checking
+            its compatibility story. None of these were migration problems —
+            they were existing problems that the migration's added strictness
+            finally made visible. If you're hesitating to switch because you're
+            worried about what will break: that's exactly why you should.
+          </p>
+
+          <!-- ── TL;DR Summary Table ── -->
+          <hr />
+          <h2>TL;DR — What Broke and How We Fixed It</h2>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
                 <tr>
-                    <th>What broke</th>
-                    <th>Root cause</th>
-                    <th>Fix</th>
+                  <th>What broke</th>
+                  <th>Root cause</th>
+                  <th>Fix</th>
                 </tr>
-            </thead>
-            <tbody>
+              </thead>
+              <tbody>
                 <tr>
-                    <td>json-bigint not found</td>
-                    <td>Used but never declared — phantom dep exposed by strict isolation</td>
-                    <td><code>pnpm add json-bigint</code></td>
-                </tr>
-                <tr>
-                    <td>Jest 30 resolver fails</td>
-                    <td>@unrs/resolver native bindings not accessible under pnpm</td>
-                    <td>Downgrade: <code>pnpm add -D jest@29</code></td>
+                  <td>json-bigint not found</td>
+                  <td>
+                    Used but never declared — phantom dep exposed by strict
+                    isolation
+                  </td>
+                  <td><code>pnpm add json-bigint</code></td>
                 </tr>
                 <tr>
-                    <td>Docker build conflict</td>
-                    <td>Local npm-style node_modules copied into pnpm container</td>
-                    <td><code>.dockerignore</code> + lockfile install inside container</td>
+                  <td>Jest 30 resolver fails</td>
+                  <td>
+                    @unrs/resolver native bindings not accessible under pnpm
+                  </td>
+                  <td>Downgrade: <code>pnpm add -D jest@29</code></td>
                 </tr>
                 <tr>
-                    <td>approve-builds in CI</td>
-                    <td>Interactive prompt in a non-interactive environment</td>
-                    <td>Commit approval config to repo before CI runs</td>
+                  <td>Docker build conflict</td>
+                  <td>
+                    Local npm-style node_modules copied into pnpm container
+                  </td>
+                  <td>
+                    <code>.dockerignore</code> + lockfile install inside
+                    container
+                  </td>
                 </tr>
-            </tbody>
-        </table>
+                <tr>
+                  <td>approve-builds in CI</td>
+                  <td>Interactive prompt in a non-interactive environment</td>
+                  <td>Commit approval config to repo before CI runs</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
 
+          <!-- ── Closing Section ── -->
+          <h2>Should You Switch?</h2>
 
-        <h2>Should You Switch?</h2>
+          <p>
+            If you're working on a production Node.js project — yes, probably.
+            The strictness that feels like friction early on is exactly the
+            friction that's protecting you: it's finding problems before
+            production does.
+          </p>
 
-        <p>If you're working on a production Node.js project — yes, probably. The strictness that feels like friction
-            early on is exactly the friction that's protecting you: it's finding problems before production does.</p>
+          <p>
+            The migration cost is real but bounded. A few hours of
+            investigation, a handful of targeted fixes, and you end up with a
+            build pipeline that's genuinely more reliable than what you started
+            with. That's a trade worth making.
+          </p>
 
-        <p>The migration cost is real but bounded. A few hours of investigation, a handful of targeted fixes, and you
-            end up with a build pipeline that's genuinely more reliable than what you started with. That's a trade worth
-            making.</p>
+          <p>Just don't do it the day before a deadline.</p>
 
-        <p>Just don't do it the day before a deadline.</p>
-        
-        <p><strong>Strict tools don’t create problems — they expose the ones you already have.</strong></p>
+          <!-- Styled closing quote -->
+          <blockquote class="closing-note">
+            Strict tools don't create problems — they expose the ones you
+            already have.
+          </blockquote>
+        </article>
+      </main>
 
-
+      <!-- ── Post footer ── -->
+      <footer class="post-footer">
+        <p>
+          Written as a personal post-mortem after completing a production
+          Node.js migration. Technical findings are accurate to the package
+          versions at the time of migration.
+        </p>
+      </footer>
     </div>
-</body>
+    <!-- /.container -->
 
+    <!-- ════════════════════════════════════════════════════════════
+       JAVASCRIPT — Reading Progress Bar
+       Drives the thin amber bar at the top of the viewport.
+       Pure vanilla JS, no dependencies.
+       ════════════════════════════════════════════════════════════ -->
+    <script>
+      (function () {
+        "use strict";
+
+        var bar = document.getElementById("progress-bar");
+        if (!bar) return;
+
+        function updateProgress() {
+          var scrollTop = window.scrollY || document.documentElement.scrollTop;
+          var docHeight =
+            document.documentElement.scrollHeight - window.innerHeight;
+          var progress = docHeight > 0 ? (scrollTop / docHeight) * 100 : 0;
+
+          bar.style.width = Math.min(progress, 100).toFixed(2) + "%";
+        }
+
+        // Passive listener — does not block scrolling
+        window.addEventListener("scroll", updateProgress, { passive: true });
+        // Run once on load in case the page loads partially scrolled
+        updateProgress();
+      })();
+    </script>
+  </body>
 </html>

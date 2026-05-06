@@ -1,0 +1,818 @@
+/* ================================================================
+   styles.css — npm → pnpm Migration Blog
+   Author : Adarsh
+   Theme  : Warm editorial / technical longread
+   ================================================================
+
+   TABLE OF CONTENTS
+   ─────────────────
+   1.  Custom Properties (Design Tokens)
+   2.  CSS Reset & Base
+   3.  Layout & Container
+   4.  Reading Progress Bar
+   5.  Header & Post Meta
+   6.  Headings
+   7.  Body Copy & Inline Elements
+   8.  Ordered / Unordered Lists
+   9.  Code (inline) & Pre Blocks
+   10. Callout Boxes (concept / warning)
+   11. Diagram Wrappers
+   12. Data Tables
+   13. Horizontal Rule & Dividers
+   14. Post Footer
+   15. Utilities
+   16. Media Queries — Tablet (≤ 768px)
+   17. Media Queries — Mobile  (≤ 480px)
+   ================================================================ */
+
+/* ────────────────────────────────────────────────────────────────
+   1. CUSTOM PROPERTIES
+   All colours, type scales, spacing and radii are defined here.
+   Change a token here and the whole page responds consistently.
+   ──────────────────────────────────────────────────────────────── */
+:root {
+  /* ── Colour Palette ── */
+  --bg: #faf9f6; /* warm off-white page background   */
+  --bg-raised: #f4f1ec; /* slightly warmer for inset panels */
+  --text: #1a1815; /* near-black for body copy         */
+  --text-2: #6b6358; /* muted for metadata / captions    */
+  --text-3: #a89f96; /* very muted for dividers / labels */
+  --accent: #c05621; /* burnt-orange primary accent      */
+  --accent-hover: #9c4318; /* darker on hover                  */
+  --accent-light: #fdf0e3; /* accent tint for callout fills    */
+  --border: #e3ddd6; /* default border colour            */
+  --border-strong: #c9c0b5; /* stronger divider                 */
+
+  /* ── Semantic / Status Colours ── */
+  --green: #166534;
+  --green-bg: #f0fdf4;
+  --green-border: #86efac;
+  --red: #991b1b;
+  --red-bg: #fff1f2;
+  --red-border: #fca5a5;
+  --blue: #1e40af;
+  --blue-bg: #eff6ff;
+  --blue-border: #bfdbfe;
+  --amber: #92400e;
+  --amber-bg: #fffbeb;
+  --amber-border: #fcd34d;
+
+  /* ── Code Block ── */
+  --code-bg: #13110e; /* dark warm surface for code       */
+  --code-text: #ede8dc; /* warm cream code text             */
+  --code-inline-bg: #f2eee8; /* inline code fill                 */
+  --code-purple: #8b5cf6; /* inline code colour               */
+
+  /* ── Typography ── */
+  --font-serif: "Lora", Georgia, "Times New Roman", serif;
+  --font-sans: "DM Sans", "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "JetBrains Mono", "Fira Code", "Courier New", monospace;
+
+  /* ── Spacing Scale ── */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --space-8: 64px;
+
+  /* ── Radius ── */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+
+  /* ── Motion ── */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --transition: 200ms var(--ease-out);
+}
+
+/* ────────────────────────────────────────────────────────────────
+   2. CSS RESET & BASE
+   Normalise cross-browser box model and baseline rendering.
+   ──────────────────────────────────────────────────────────────── */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  /* Smooth anchor scrolling */
+  scroll-behavior: smooth;
+  /* Prevent font-size bump on iOS orientation change */
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  font-family: var(--font-sans);
+  font-size: 17px;
+  line-height: 1.8;
+  color: var(--text);
+  background-color: var(--bg);
+  /* Subtle warm grain effect via SVG noise filter */
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)' opacity='0.022'/%3E%3C/svg%3E");
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+img {
+  max-width: 100%;
+  height: auto;
+  display: block;
+}
+
+/* Remove default list styles (reset for ul/ol that aren't in .content) */
+ul,
+ol {
+  list-style: none;
+}
+
+/* ────────────────────────────────────────────────────────────────
+   3. LAYOUT & CONTAINER
+   Single-column editorial layout, centred, with generous padding.
+   ──────────────────────────────────────────────────────────────── */
+.container {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: var(--space-8) var(--space-5) 120px;
+}
+
+/* Breakout utility — allows certain elements to extend beyond the
+   content column without breaking flow (e.g., wide diagrams) */
+.breakout {
+  width: calc(100% + 48px);
+  margin-left: -24px;
+  margin-right: -24px;
+}
+
+/* ────────────────────────────────────────────────────────────────
+   4. READING PROGRESS BAR
+   A thin amber bar at the top of the viewport that fills as the
+   reader scrolls through the article. Driven by JS scroll event.
+   ──────────────────────────────────────────────────────────────── */
+#progress-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 3px;
+  width: 0%; /* JS sets this via style.width         */
+  background: var(--accent);
+  z-index: 100;
+  transition: width 100ms linear;
+  border-radius: 0 2px 2px 0;
+}
+
+/* ────────────────────────────────────────────────────────────────
+   5. HEADER & POST META
+   ──────────────────────────────────────────────────────────────── */
+
+/* Pill tags above the title */
+.post-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-bottom: var(--space-5);
+}
+
+.tag {
+  display: inline-block;
+  font-family: var(--font-sans);
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  padding: 4px 12px;
+  border-radius: 100px;
+  background: var(--accent-light);
+  color: var(--amber);
+  border: 1px solid #f3cda0;
+}
+
+/* Main article title */
+.post-title {
+  font-family: var(--font-serif);
+  font-size: clamp(28px, 5.5vw, 46px);
+  font-weight: 600;
+  line-height: 1.18;
+  letter-spacing: -0.02em;
+  color: var(--text);
+  margin-bottom: var(--space-4);
+}
+
+/* Deck / subtitle — italic serif, muted */
+.post-subtitle {
+  font-family: var(--font-serif);
+  font-size: clamp(17px, 2.5vw, 20px);
+  font-style: italic;
+  color: var(--text-2);
+  line-height: 1.65;
+  margin-bottom: var(--space-5);
+}
+
+/* Small tech stack indicator */
+.tech-stack {
+  font-size: 13.5px;
+  color: var(--text-3);
+  margin-bottom: var(--space-5);
+  font-family: var(--font-mono);
+  letter-spacing: 0.01em;
+}
+
+/* Author / read-time row */
+.post-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  font-size: 13.5px;
+  color: var(--text-3);
+  padding-bottom: var(--space-7);
+  border-bottom: 1px solid var(--border);
+  margin-bottom: var(--space-7);
+}
+
+.post-meta .dot {
+  color: var(--border);
+}
+
+.author-name {
+  font-weight: 500;
+  color: var(--text-2);
+}
+
+/* ────────────────────────────────────────────────────────────────
+   6. HEADINGS
+   H2 = section titles (serif, large)
+   H3 = sub-section titles (sans, medium weight)
+   ──────────────────────────────────────────────────────────────── */
+
+/* Section-level heading with a subtle left accent mark */
+h2 {
+  font-family: var(--font-serif);
+  font-size: clamp(22px, 3.5vw, 28px);
+  font-weight: 600;
+  line-height: 1.28;
+  color: var(--text);
+  margin-top: 60px;
+  margin-bottom: var(--space-4);
+  padding-left: var(--space-4);
+  border-left: 3px solid var(--accent);
+  letter-spacing: -0.01em;
+}
+
+/* Sub-section heading — heavier sans, no border */
+h3 {
+  font-family: var(--font-sans);
+  font-size: 17.5px;
+  font-weight: 600;
+  color: var(--text);
+  margin-top: var(--space-7);
+  margin-bottom: var(--space-3);
+}
+
+/* ────────────────────────────────────────────────────────────────
+   7. BODY COPY & INLINE ELEMENTS
+   ──────────────────────────────────────────────────────────────── */
+p {
+  margin-bottom: var(--space-5);
+}
+
+/* Use Lora italic for emphasis — more elegant than sans-italic */
+em {
+  font-family: var(--font-serif);
+  font-style: italic;
+}
+
+strong {
+  font-weight: 600;
+}
+
+/* Warm amber links, underline offset for legibility */
+a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-thickness: 1px;
+  transition: color var(--transition);
+}
+
+a:hover {
+  color: var(--accent-hover);
+}
+
+/* ────────────────────────────────────────────────────────────────
+   8. ORDERED / UNORDERED LISTS
+   Styled bullet points using pseudo-elements for visual flair.
+   ──────────────────────────────────────────────────────────────── */
+
+/* Reset browser defaults in the article body */
+article ul,
+article ol {
+  list-style: none;
+  padding-left: 0;
+  margin-bottom: var(--space-5);
+}
+
+article ul li,
+article ol li {
+  position: relative;
+  padding-left: 26px;
+  margin-bottom: 14px;
+  line-height: 1.75;
+}
+
+/* Filled circle bullet */
+article ul li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 10px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+/* Numbered circle for ordered lists */
+article ol {
+  counter-reset: list-counter;
+}
+
+article ol li {
+  counter-increment: list-counter;
+}
+
+article ol li::before {
+  content: counter(list-counter);
+  position: absolute;
+  left: 0;
+  top: 1px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+/* ────────────────────────────────────────────────────────────────
+   9. CODE — INLINE & BLOCK
+   Inline code uses a light warm fill with purple text.
+   Pre/code blocks use a dark warm surface with syntax-ready text.
+   ──────────────────────────────────────────────────────────────── */
+
+/* Inline code */
+code {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  background: var(--code-inline-bg);
+  border: 1px solid var(--border);
+  color: var(--code-purple);
+  padding: 2px 7px;
+  border-radius: var(--radius-sm);
+  /* Prevent line breaks mid-token for short snippets */
+  white-space: nowrap;
+}
+
+/* Pre-block label (e.g., "terminal", ".dockerignore") */
+.code-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text-3);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  margin-bottom: 6px;
+  display: block;
+}
+
+/* Fenced code block */
+pre {
+  background: var(--code-bg);
+  color: var(--code-text);
+  border-radius: var(--radius-lg);
+  padding: 22px 26px;
+  overflow-x: auto; /* horizontal scroll on small screens  */
+  margin-bottom: var(--space-7);
+  font-size: 13.5px;
+  line-height: 1.75;
+  /* Custom scrollbar for webkit — thin, warm-tinted */
+  scrollbar-width: thin;
+  scrollbar-color: #3a3530 var(--code-bg);
+}
+
+pre::-webkit-scrollbar {
+  height: 6px;
+}
+
+pre::-webkit-scrollbar-track {
+  background: var(--code-bg);
+}
+
+pre::-webkit-scrollbar-thumb {
+  background: #3a3530;
+  border-radius: 3px;
+}
+
+/* Reset inline code styles when nested inside pre */
+pre code {
+  background: none;
+  border: none;
+  padding: 0;
+  color: inherit;
+  font-size: inherit;
+  white-space: pre; /* preserve indentation inside blocks  */
+}
+
+/* Tab-size normalisation */
+pre,
+code {
+  tab-size: 2;
+}
+
+/* ────────────────────────────────────────────────────────────────
+   10. CALLOUT BOXES
+   Two variants: "concept" (blue, informational) and
+   "warning" (amber, cautionary).
+   ──────────────────────────────────────────────────────────────── */
+.callout {
+  border-radius: var(--radius-lg);
+  padding: 20px 24px;
+  margin: var(--space-7) 0;
+  border-left: 4px solid transparent; /* colour set per-variant   */
+}
+
+/* Small uppercase label at the top of each callout */
+.callout-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-bottom: 12px;
+}
+
+/* Normalise paragraph spacing inside callouts */
+.callout p {
+  font-size: 15px;
+  line-height: 1.72;
+  margin-bottom: 10px;
+}
+
+.callout p:last-child {
+  margin-bottom: 0;
+}
+
+/* Concept callout — informational, blue tones */
+.callout-concept {
+  background: var(--blue-bg);
+  border-color: #60a5fa;
+}
+
+.callout-concept .callout-title {
+  color: var(--blue);
+}
+
+/* Warning callout — cautionary, amber tones */
+.callout-warning {
+  background: var(--amber-bg);
+  border-color: var(--amber-border);
+}
+
+.callout-warning .callout-title {
+  color: var(--amber);
+}
+
+/* ────────────────────────────────────────────────────────────────
+   11. DIAGRAM WRAPPERS
+   Diagrams are SVG-based and responsive (width="100%").
+   The wrapper provides a card surface with caption area.
+   ──────────────────────────────────────────────────────────────── */
+.diagram-wrap {
+  margin: var(--space-7) 0;
+  background: #ffffff;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  padding: 28px 24px 20px;
+  /* Subtle inner shadow for depth */
+  box-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.04),
+    inset 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+
+/* Allow SVG diagrams to scroll horizontally on very small viewports */
+.diagram-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Ensure the SVG never shrinks past a readable minimum width */
+.diagram-scroll svg {
+  min-width: 560px;
+}
+
+/* Caption below each diagram */
+.diagram-caption {
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-3);
+  margin-top: 16px;
+  font-style: italic;
+  line-height: 1.55;
+  padding: 0 var(--space-4);
+}
+
+/* Diagram legend rows (colour key) */
+.diagram-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3) var(--space-5);
+  justify-content: center;
+  margin-top: 14px;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+/* ────────────────────────────────────────────────────────────────
+   12. DATA TABLES
+   ──────────────────────────────────────────────────────────────── */
+
+/* Scrollable wrapper — prevents table overflow on small screens */
+.table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  margin: var(--space-5) 0;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14.5px;
+  min-width: 500px; /* force horizontal scroll before squishing */
+}
+
+thead th {
+  background: var(--bg-raised);
+  padding: 11px 16px;
+  text-align: left;
+  font-family: var(--font-sans);
+  font-weight: 600;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-2);
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+td {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+  line-height: 1.65;
+}
+
+tr:last-child td {
+  border-bottom: none;
+}
+
+/* First column — slightly muted, acts as a row label */
+td:first-child {
+  color: var(--text-2);
+  font-size: 13.5px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+/* Zebra stripe for readability */
+tbody tr:nth-child(even) td {
+  background: rgba(0, 0, 0, 0.015);
+}
+
+/* ────────────────────────────────────────────────────────────────
+   13. HORIZONTAL RULE & DIVIDERS
+   ──────────────────────────────────────────────────────────────── */
+hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: var(--space-8) 0;
+}
+
+/* Decorative section break — three dots */
+.section-break {
+  text-align: center;
+  color: var(--text-3);
+  font-size: 20px;
+  letter-spacing: 0.5em;
+  margin: var(--space-8) 0;
+  user-select: none;
+}
+
+/* ────────────────────────────────────────────────────────────────
+   14. POST FOOTER
+   ──────────────────────────────────────────────────────────────── */
+.post-footer {
+  margin-top: var(--space-8);
+  padding-top: var(--space-6);
+  border-top: 1px solid var(--border);
+  font-size: 13.5px;
+  color: var(--text-3);
+  line-height: 1.7;
+}
+
+/* Closing thought / key takeaway — styled prominently */
+.closing-note {
+  font-family: var(--font-serif);
+  font-size: clamp(17px, 2.5vw, 20px);
+  font-style: italic;
+  color: var(--text-2);
+  border-left: 3px solid var(--accent);
+  padding: var(--space-4) var(--space-5);
+  margin: var(--space-7) 0 var(--space-5);
+  background: var(--accent-light);
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+}
+
+/* ────────────────────────────────────────────────────────────────
+   15. UTILITIES
+   ──────────────────────────────────────────────────────────────── */
+
+/* Visually hidden but accessible to screen readers */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Skip to content link for keyboard navigation */
+.skip-link {
+  position: absolute;
+  top: -40px;
+  left: 0;
+  background: var(--accent);
+  color: white;
+  padding: 8px 16px;
+  text-decoration: none;
+  font-size: 14px;
+  z-index: 200;
+  transition: top 0.2s;
+}
+
+.skip-link:focus {
+  top: 0;
+}
+
+/* ────────────────────────────────────────────────────────────────
+   16. RESPONSIVE — TABLET (≤ 768px)
+   ──────────────────────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  body {
+    font-size: 16px;
+  }
+
+  .container {
+    padding: var(--space-7) var(--space-5) 80px;
+  }
+
+  h2 {
+    margin-top: var(--space-7);
+    padding-left: var(--space-3);
+  }
+
+  .diagram-wrap {
+    padding: 20px 16px 16px;
+  }
+
+  .callout {
+    padding: 16px 18px;
+  }
+
+  pre {
+    padding: 18px 20px;
+    font-size: 12.5px;
+  }
+}
+
+/* ────────────────────────────────────────────────────────────────
+   17. RESPONSIVE — MOBILE (≤ 480px)
+   ──────────────────────────────────────────────────────────────── */
+@media (max-width: 480px) {
+  body {
+    font-size: 15.5px;
+    line-height: 1.75;
+  }
+
+  .container {
+    padding: var(--space-6) var(--space-4) 60px;
+  }
+
+  /* Tighten up section spacing on small screens */
+  h2 {
+    margin-top: 44px;
+    font-size: 21px;
+  }
+
+  h3 {
+    font-size: 16.5px;
+    margin-top: 36px;
+  }
+
+  /* Tags wrap tightly */
+  .post-tags {
+    gap: 6px;
+  }
+
+  .tag {
+    font-size: 9.5px;
+    padding: 3px 10px;
+  }
+
+  /* Code horizontal scroll hint */
+  pre {
+    border-radius: var(--radius-md);
+    padding: 16px 18px;
+    font-size: 12px;
+  }
+
+  /* Diagrams: enable scroll, hint at overflow with gradient */
+  .diagram-wrap {
+    padding: 16px 14px 14px;
+    border-radius: var(--radius-lg);
+  }
+
+  /* Table: always scrollable */
+  .table-wrap {
+    border-radius: var(--radius-md);
+  }
+
+  /* Callouts take full width */
+  .callout {
+    padding: 14px 16px;
+    border-radius: var(--radius-md);
+  }
+
+  .callout p {
+    font-size: 14.5px;
+  }
+
+  /* Closing note padding */
+  .closing-note {
+    padding: var(--space-3) var(--space-4);
+    font-size: 16px;
+  }
+}
+
+/* ────────────────────────────────────────────────────────────────
+   PRINT STYLES
+   Hide progress bar; ensure code blocks don't get clipped.
+   ──────────────────────────────────────────────────────────────── */
+@media print {
+  #progress-bar {
+    display: none;
+  }
+  pre {
+    white-space: pre-wrap;
+    overflow: visible;
+  }
+  .diagram-wrap {
+    break-inside: avoid;
+  }
+  .callout {
+    break-inside: avoid;
+  }
+}
