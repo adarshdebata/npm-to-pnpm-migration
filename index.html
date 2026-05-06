@@ -1261,9 +1261,7 @@ COPY package.json pnpm-lock.yaml ./
 
 # --prod          : skip devDependencies (Jest, ESLint, etc.)
 # --frozen-lockfile: fail if pnpm-lock.yaml doesn't match package.json
-RUN pnpm install --prod --frozen-lockfile \
- && pnpm rebuild \
- && pnpm approve-builds
+RUN pnpm install --prod --frozen-lockfile 
 
 # Copy source after dependency install — keeps the cache layer clean
 COPY . .
@@ -1281,6 +1279,14 @@ COPY --from=builder /usr/src/app /usr/src/app
 
 EXPOSE 8080
 CMD ["bin/server.js"]</code></pre>
+
+          <p>
+            During migration we initially experimented with
+            <code>pnpm approve-builds</code> inside the container build process,
+            but later discovered it was better treated as a local
+            development/security workflow rather than part of the production
+            image build itself.
+          </p>
 
           <h3>The pnpm approve-builds gotcha</h3>
 
@@ -1523,7 +1529,7 @@ CMD ["bin/server.js"]</code></pre>
                   font-size="10.5"
                   fill="#3B82F6"
                 >
-                  delete node_modules · generate lockfile
+                  generate lockfile
                 </text>
 
                 <!-- Arrow: node 2 → node 3 -->
